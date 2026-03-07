@@ -1,0 +1,302 @@
+{
+    "actions": [],
+    "allow_rename": 1,
+    "autoname": "WBS-.YYYY.-.#####",
+    "creation": "2026-03-07 10:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "wbs_name",
+        "wbs_type",
+        "status",
+        "column_break_1",
+        "project",
+        "financial_model",
+        "company",
+        "section_break_details",
+        "site",
+        "cost_center",
+        "column_break_details",
+        "person_responsible",
+        "priority",
+        "section_break_material_budget",
+        "material_budget",
+        "material_spent",
+        "material_utilization_pct",
+        "column_break_service_budget",
+        "service_budget",
+        "service_spent",
+        "service_utilization_pct",
+        "section_break_totals",
+        "total_budget",
+        "total_spent",
+        "column_break_totals",
+        "overall_utilization_pct",
+        "section_break_revenue",
+        "total_revenue",
+        "column_break_revenue",
+        "total_invoiced",
+        "column_break_revenue2",
+        "total_collected",
+        "section_break_remarks",
+        "remarks"
+    ],
+    "fields": [
+        {
+            "fieldname": "wbs_name",
+            "fieldtype": "Data",
+            "label": "WBS Name",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "wbs_type",
+            "fieldtype": "Select",
+            "label": "WBS Type",
+            "options": "\nPhase\nWork Package\nDeliverable\nMilestone\nCost Center\nOverhead",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "label": "Status",
+            "options": "Active\nOn Hold\nCompleted\nCancelled",
+            "default": "Active",
+            "in_list_view": 1,
+            "in_standard_filter": 1
+        },
+        {
+            "fieldname": "column_break_1",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "project",
+            "fieldtype": "Link",
+            "label": "Project",
+            "options": "Project",
+            "in_standard_filter": 1
+        },
+        {
+            "fieldname": "financial_model",
+            "fieldtype": "Link",
+            "label": "Financial Model",
+            "options": "Financial Model",
+            "in_standard_filter": 1
+        },
+        {
+            "fieldname": "company",
+            "fieldtype": "Link",
+            "label": "Company",
+            "options": "Company",
+            "reqd": 1
+        },
+        {
+            "fieldname": "section_break_details",
+            "fieldtype": "Section Break",
+            "label": "Details"
+        },
+        {
+            "fieldname": "site",
+            "fieldtype": "Data",
+            "label": "Site"
+        },
+        {
+            "fieldname": "cost_center",
+            "fieldtype": "Link",
+            "label": "Cost Center",
+            "options": "Cost Center"
+        },
+        {
+            "fieldname": "column_break_details",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "person_responsible",
+            "fieldtype": "Link",
+            "label": "Person Responsible",
+            "options": "Employee"
+        },
+        {
+            "fieldname": "priority",
+            "fieldtype": "Select",
+            "label": "Priority",
+            "options": "\nCritical\nHigh\nMedium\nLow"
+        },
+        {
+            "fieldname": "section_break_material_budget",
+            "fieldtype": "Section Break",
+            "label": "Budget & Utilization"
+        },
+        {
+            "fieldname": "material_budget",
+            "fieldtype": "Currency",
+            "label": "Material Budget",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "material_spent",
+            "fieldtype": "Currency",
+            "label": "Material Spent",
+            "read_only": 1
+        },
+        {
+            "fieldname": "material_utilization_pct",
+            "fieldtype": "Percent",
+            "label": "Material Utilization %",
+            "read_only": 1
+        },
+        {
+            "fieldname": "column_break_service_budget",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "service_budget",
+            "fieldtype": "Currency",
+            "label": "Service Budget"
+        },
+        {
+            "fieldname": "service_spent",
+            "fieldtype": "Currency",
+            "label": "Service Spent",
+            "read_only": 1
+        },
+        {
+            "fieldname": "service_utilization_pct",
+            "fieldtype": "Percent",
+            "label": "Service Utilization %",
+            "read_only": 1
+        },
+        {
+            "fieldname": "section_break_totals",
+            "fieldtype": "Section Break",
+            "label": "Totals"
+        },
+        {
+            "fieldname": "total_budget",
+            "fieldtype": "Currency",
+            "label": "Total Budget",
+            "read_only": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "total_spent",
+            "fieldtype": "Currency",
+            "label": "Total Spent",
+            "read_only": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "column_break_totals",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "overall_utilization_pct",
+            "fieldtype": "Percent",
+            "label": "Overall Utilization %",
+            "read_only": 1,
+            "bold": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "section_break_revenue",
+            "fieldtype": "Section Break",
+            "label": "Revenue Tracking",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "total_revenue",
+            "fieldtype": "Currency",
+            "label": "Total Revenue"
+        },
+        {
+            "fieldname": "column_break_revenue",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "total_invoiced",
+            "fieldtype": "Currency",
+            "label": "Total Invoiced",
+            "read_only": 1
+        },
+        {
+            "fieldname": "column_break_revenue2",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "total_collected",
+            "fieldtype": "Currency",
+            "label": "Total Collected",
+            "read_only": 1
+        },
+        {
+            "fieldname": "section_break_remarks",
+            "fieldtype": "Section Break",
+            "label": "Remarks",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "remarks",
+            "fieldtype": "Small Text",
+            "label": "Remarks"
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [
+        {
+            "link_doctype": "Sub WBS Element",
+            "link_fieldname": "main_wbs_element"
+        },
+        {
+            "link_doctype": "Material Request",
+            "link_fieldname": "custom_wbs_element"
+        },
+        {
+            "link_doctype": "Purchase Order",
+            "link_fieldname": "custom_wbs_element"
+        }
+    ],
+    "modified": "2026-03-07 10:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Detox Project",
+    "name": "WBS Element",
+    "naming_rule": "Expression (old style)",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        },
+        {
+            "create": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "Projects Manager",
+            "share": 1,
+            "write": 1
+        },
+        {
+            "create": 1,
+            "email": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "Projects User",
+            "write": 1
+        }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}

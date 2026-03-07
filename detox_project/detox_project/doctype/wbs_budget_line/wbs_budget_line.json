@@ -1,0 +1,116 @@
+{
+    "actions": [],
+    "creation": "2026-03-07 10:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "wbs_name",
+        "wbs_type",
+        "parent_wbs_name",
+        "column_break_1",
+        "site",
+        "cost_center",
+        "person_responsible",
+        "priority",
+        "section_break_budget",
+        "material_budget",
+        "column_break_2",
+        "service_budget",
+        "column_break_3",
+        "total_line_budget"
+    ],
+    "fields": [
+        {
+            "fieldname": "wbs_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "WBS Name",
+            "reqd": 1
+        },
+        {
+            "fieldname": "wbs_type",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "WBS Type",
+            "options": "\nPhase\nWork Package\nDeliverable\nMilestone\nCost Center\nOverhead",
+            "reqd": 1
+        },
+        {
+            "fieldname": "parent_wbs_name",
+            "fieldtype": "Data",
+            "label": "Parent WBS Name"
+        },
+        {
+            "fieldname": "column_break_1",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "site",
+            "fieldtype": "Data",
+            "label": "Site"
+        },
+        {
+            "fieldname": "cost_center",
+            "fieldtype": "Link",
+            "label": "Cost Center",
+            "options": "Cost Center"
+        },
+        {
+            "fieldname": "person_responsible",
+            "fieldtype": "Link",
+            "label": "Person Responsible",
+            "options": "Employee"
+        },
+        {
+            "fieldname": "priority",
+            "fieldtype": "Select",
+            "label": "Priority",
+            "options": "\nCritical\nHigh\nMedium\nLow"
+        },
+        {
+            "fieldname": "section_break_budget",
+            "fieldtype": "Section Break",
+            "label": "Budget"
+        },
+        {
+            "fieldname": "material_budget",
+            "fieldtype": "Currency",
+            "in_list_view": 1,
+            "label": "Material Budget"
+        },
+        {
+            "fieldname": "column_break_2",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "service_budget",
+            "fieldtype": "Currency",
+            "in_list_view": 1,
+            "label": "Service Budget"
+        },
+        {
+            "fieldname": "column_break_3",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "total_line_budget",
+            "fieldtype": "Currency",
+            "in_list_view": 1,
+            "label": "Total Line Budget",
+            "read_only": 1
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "istable": 1,
+    "links": [],
+    "modified": "2026-03-07 10:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Detox Project",
+    "name": "WBS Budget Line",
+    "owner": "Administrator",
+    "permissions": [],
+    "sort_field": "idx",
+    "sort_order": "ASC",
+    "states": [],
+    "track_changes": 0
+}
