@@ -5,12 +5,12 @@ $(document).ready(function () {
         refresh(frm) {
             if (frm.doctype !== "Tender Management") return;
 
-            let status = frm.doc.status || frm.doc.tender_status;
+            let status = frm.doc.workflow_state || frm.doc.status || frm.doc.tender_status || "";
             if (status === "Awarded" && !frm.doc.custom_linked_project) {
                 frm.add_custom_button(__("Create Project"), () => {
                     frappe.call({
                         method: "detox_project.events.tender.create_project_from_tender",
-                        args: { tender: frm.doc.name },
+                        args: { tender_name: frm.doc.name },
                         freeze: true,
                         freeze_message: __("Creating Project..."),
                         callback(r) {
