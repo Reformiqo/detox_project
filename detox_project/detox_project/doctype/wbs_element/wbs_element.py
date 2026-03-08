@@ -7,6 +7,9 @@ class WBSElement(Document):
     def validate(self):
         self.calculate_totals()
 
+    def on_update(self):
+        self.update_project_budget_summary()
+
     def calculate_totals(self):
         self.total_budget = (self.material_budget or 0) + (self.service_budget or 0)
         self.total_spent = (self.material_spent or 0) + (self.service_spent or 0)

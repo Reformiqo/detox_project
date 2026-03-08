@@ -15,7 +15,16 @@ frappe.ui.form.on("Project", {
         }
 
         // Tender banner
-        if (frm.doc.custom_tender) {
+        if (frm.doc.custom_tender_management) {
+            frm.dashboard.add_comment(
+                __("Tender: {0} | No: {1} | Awarded: {2}", [
+                    `<a href="/app/tender-management/${frm.doc.custom_tender_management}">${frm.doc.custom_tender_management}</a>`,
+                    frm.doc.custom_tender_number || "",
+                    frm.doc.custom_tender_award_date || ""
+                ]),
+                "blue", true
+            );
+        } else if (frm.doc.custom_tender) {
             frm.dashboard.add_comment(
                 __("Linked to Tender: {0}", [frm.doc.custom_tender]),
                 "blue", true
@@ -32,7 +41,7 @@ frappe.ui.form.on("Project", {
             );
         }
 
-        if (!frm.is_new() && frm.doc.status === "Open") {
+        if (!frm.is_new()) {
             frm.add_custom_button(__("WBS Elements"), () => {
                 frappe.set_route("List", "WBS Element", { project: frm.doc.name });
             }, __("View"));
@@ -50,6 +59,14 @@ frappe.ui.form.on("Project", {
                     frappe.set_route("Form", "Financial Model", frm.doc.custom_financial_model);
                 }, __("View"));
             }
+
+            frm.add_custom_button(__("Budget Plans"), () => {
+                frappe.set_route("List", "Project Budget Plan", { project: frm.doc.name });
+            }, __("View"));
+
+            frm.add_custom_button(__("Sub WBS Elements"), () => {
+                frappe.set_route("List", "Sub WBS Element", { project: frm.doc.name });
+            }, __("View"));
 
             frm.add_custom_button(__("Material Request"), () => {
                 frappe.new_doc("Material Request", {
@@ -73,24 +90,39 @@ frappe.ui.form.on("Project", {
             }, __("Actions"));
         }
 
-        if (!frm.is_new() && frm.doc.status !== "Cancelled" && frappe.user.has_role("Projects Manager")) {
-            frm.add_custom_button(__("Cancel Project & WBS"), () => {
-                frappe.confirm(
-                    __("This will cancel all linked WBS Elements and Sub WBS Elements. Continue?"),
-                    () => {
-                        frappe.call({
-                            method: "frappe.client.set_value",
-                            args: {
-                                doctype: "Project",
-                                name: frm.doc.name,
-                                fieldname: "status",
-                                value: "Cancelled"
-                            },
-                            callback() { frm.reload_doc(); }
-                        });
-                    }
+        if (!frm.is_new() && frm.doc.status !== "Cancelled" && frm.doc.status !== "Completed"
+            && frappe.user.has_role("Projects Manager")) {
+            frm.add_custom_button(__("Cancel Project + All Budgets"), () => {
+                frappe.prompt(
+                    {fieldname: "reason", fieldtype: "Small Text", label: "Cancellation Reason", reqd: 1},
+                    (values) => {
+                        frappe.confirm(
+                            __("This will cancel ALL linked Financial Models, Budget Plans, WBS Elements, and Sub WBS Elements. This cannot be undone. Continue?"),
+                            () => {
+                                frappe.call({
+                                    method: "detox_project.events.tender.cascade_cancel_project",
+                                    args: {project_name: frm.doc.name, reason: values.reason},
+                                    freeze: true,
+                                    freeze_message: __("Cascade cancelling all linked documents..."),
+                                    callback() {
+                                        frm.reload_doc();
+                                        frappe.show_alert({message: __("Project and all linked documents cancelled"), indicator: "orange"});
+                                    }
+                                });
+                            }
+                        );
+                    },
+                    __("Cancel Project"), __("Confirm Cancel")
                 );
             }, __("Actions"));
+        }
+
+        // Cancellation info banner
+        if (frm.doc.status === "Cancelled" && frm.doc.custom_cancellation_reason) {
+            frm.set_intro(
+                __("Cancelled: {0}", [frm.doc.custom_cancellation_reason]),
+                "red"
+            );
         }
     }
 });

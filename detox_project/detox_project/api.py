@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.utils import flt
 
 
 # ---------------------------------------------------------------------------
@@ -7,10 +8,24 @@ from frappe import _
 # ---------------------------------------------------------------------------
 
 def validate_project(doc, method):
+    """Validate Project — budget calc, FM status sync, LOI check."""
     if doc.custom_total_budget and doc.custom_total_spent:
         doc.custom_budget_utilization_pct = (
             doc.custom_total_spent / doc.custom_total_budget * 100
         )
+        doc.custom_budget_remaining = flt(doc.custom_total_budget) - flt(doc.custom_total_spent)
+    # Sync Financial Model status
+    if doc.custom_financial_model:
+        fm_status = frappe.db.get_value("Financial Model", doc.custom_financial_model, "model_status")
+        if fm_status:
+            doc.custom_financial_model_status = fm_status
+    # SEPPL LOI warning
+    if doc.company and "SEPPL" in (doc.company or ""):
+        if not doc.get("custom_loi_reference"):
+            frappe.msgprint(
+                _("LOI Reference is recommended for SEPPL projects."),
+                indicator="orange", alert=True
+            )
 
 
 def on_project_update(doc, method):
@@ -34,7 +49,7 @@ def on_project_update(doc, method):
 
 
 def validate_material_request_budget(doc, method):
-    """SOFT warning when MR is linked to a WBS that exceeds budget."""
+    """HARD block: MR amount must not exceed WBS remaining budget by type."""
     if not doc.custom_wbs_element:
         return
 
@@ -42,28 +57,51 @@ def validate_material_request_budget(doc, method):
     if not wbs.total_budget:
         return
 
-    pct = wbs.overall_utilization_pct or 0
-    if pct >= 100:
-        frappe.msgprint(
-            _("WBS Element {0} has EXCEEDED its budget!").format(wbs.name),
-            indicator="red",
-            title=_("Budget Exceeded"),
-        )
-    elif pct >= 80:
-        frappe.msgprint(
-            _("WBS Element {0} has {1}% budget utilization. Budget: {2}, Spent: {3}").format(
-                wbs.name,
-                f"{pct:.1f}",
-                frappe.format_value(wbs.total_budget, {"fieldtype": "Currency"}),
-                frappe.format_value(wbs.total_spent, {"fieldtype": "Currency"}),
+    mr_total = sum(flt(item.amount) for item in doc.items)
+    request_type = doc.custom_request_type or "Material"
+
+    if request_type == "Material":
+        budget = flt(wbs.material_budget)
+        spent = flt(wbs.material_spent)
+    else:
+        budget = flt(wbs.service_budget)
+        spent = flt(wbs.service_spent)
+
+    remaining = budget - spent
+
+    # HARD BLOCK if MR exceeds remaining budget
+    if mr_total > remaining and budget > 0:
+        frappe.throw(
+            _("BUDGET EXCEEDED: This {0} Request ({1}) exceeds remaining WBS '{2}' "
+              "{0} budget of {3}.\n\n"
+              "Budget: {4} | Already Spent: {5} | Remaining: {3}\n\n"
+              "Please revise the request amount or get a budget increase approved.").format(
+                request_type,
+                frappe.format_value(mr_total, {"fieldtype": "Currency"}),
+                wbs.wbs_name,
+                frappe.format_value(remaining, {"fieldtype": "Currency"}),
+                frappe.format_value(budget, {"fieldtype": "Currency"}),
+                frappe.format_value(spent, {"fieldtype": "Currency"}),
             ),
-            indicator="orange",
-            title=_("Budget Warning"),
+            title=_("Budget Limit Exceeded"),
         )
+
+    # Warning at 80% (still allows save)
+    new_total = spent + mr_total
+    if budget > 0:
+        new_pct = new_total / budget * 100
+        if new_pct >= 80 and mr_total <= remaining:
+            frappe.msgprint(
+                _("This {0} Request will bring WBS '{1}' {0} budget to {2}% utilization.").format(
+                    request_type, wbs.wbs_name, f"{new_pct:.1f}"
+                ),
+                indicator="orange",
+                title=_("Budget Warning"),
+            )
 
 
 def validate_po_budget(doc, method):
-    """HARD block when PO linked to WBS exceeds budget."""
+    """HARD block: PO amount must not exceed WBS remaining budget by type."""
     if not doc.custom_wbs_element:
         return
 
@@ -71,29 +109,46 @@ def validate_po_budget(doc, method):
     if not wbs.total_budget:
         return
 
-    new_total_spent = (wbs.total_spent or 0) + (doc.grand_total or 0)
-    new_pct = new_total_spent / wbs.total_budget * 100
+    po_total = flt(doc.grand_total)
+    po_type = doc.custom_po_type or "Material"
 
-    if new_pct > 100:
+    if po_type == "Material":
+        budget = flt(wbs.material_budget)
+        spent = flt(wbs.material_spent)
+    else:
+        budget = flt(wbs.service_budget)
+        spent = flt(wbs.service_spent)
+
+    remaining = budget - spent
+
+    if po_total > remaining and budget > 0:
         frappe.throw(
-            _("This Purchase Order ({0}) would cause WBS Element {1} to exceed its budget. "
-              "Current spent: {2}, PO amount: {3}, Budget: {4}").format(
-                frappe.format_value(doc.grand_total, {"fieldtype": "Currency"}),
-                wbs.name,
-                frappe.format_value(wbs.total_spent, {"fieldtype": "Currency"}),
-                frappe.format_value(doc.grand_total, {"fieldtype": "Currency"}),
-                frappe.format_value(wbs.total_budget, {"fieldtype": "Currency"}),
+            _("BUDGET EXCEEDED: This {0} PO ({1}) exceeds remaining WBS '{2}' "
+              "{0} budget of {3}.\n\n"
+              "Budget: {4} | Already Spent: {5} | Remaining: {3}\n\n"
+              "Please revise the PO amount or request a budget increase.").format(
+                po_type,
+                frappe.format_value(po_total, {"fieldtype": "Currency"}),
+                wbs.wbs_name,
+                frappe.format_value(remaining, {"fieldtype": "Currency"}),
+                frappe.format_value(budget, {"fieldtype": "Currency"}),
+                frappe.format_value(spent, {"fieldtype": "Currency"}),
             ),
-            title=_("Budget Exceeded"),
+            title=_("Budget Limit Exceeded"),
         )
-    elif new_pct > 80:
-        frappe.msgprint(
-            _("This PO will bring WBS {0} to {1}% utilization").format(
-                wbs.name, f"{new_pct:.1f}"
-            ),
-            indicator="orange",
-            title=_("Budget Warning"),
-        )
+
+    # Warning at 80%
+    new_total = spent + po_total
+    if budget > 0:
+        new_pct = new_total / budget * 100
+        if new_pct >= 80 and po_total <= remaining:
+            frappe.msgprint(
+                _("This PO will bring WBS '{0}' {1} budget to {2}% utilization.").format(
+                    wbs.wbs_name, po_type, f"{new_pct:.1f}"
+                ),
+                indicator="orange",
+                title=_("Budget Warning"),
+            )
 
 
 def on_po_submit(doc, method):

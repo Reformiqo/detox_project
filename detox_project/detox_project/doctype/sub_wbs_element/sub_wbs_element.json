@@ -1,6 +1,6 @@
 {
     "actions": [],
-    "autoname": "autoname",
+    "autoname": "hash",
     "creation": "2026-03-07 10:00:00.000000",
     "doctype": "DocType",
     "engine": "InnoDB",
@@ -188,7 +188,7 @@
     "modified_by": "Administrator",
     "module": "Detox Project",
     "name": "Sub WBS Element",
-    "naming_rule": "Autoincrement",
+    "naming_rule": "Random",
     "owner": "Administrator",
     "permissions": [
         {

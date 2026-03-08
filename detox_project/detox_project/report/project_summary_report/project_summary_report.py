@@ -3,7 +3,10 @@ from frappe import _
 
 
 def execute(filters=None):
-    return get_columns(), get_data(filters)
+    columns = get_columns()
+    data = get_data(filters)
+    chart = get_chart(data)
+    return columns, data, None, chart
 
 
 def get_columns():
@@ -46,3 +49,24 @@ def get_data(filters):
         project["po_count"] = frappe.db.count("Purchase Order", {"project": project.name, "docstatus": 1})
 
     return projects
+
+
+def get_chart(data):
+    if not data:
+        return None
+
+    labels = [d.project_name[:25] for d in data[:10]]
+    budgets = [d.custom_total_budget or 0 for d in data[:10]]
+    spent = [d.custom_total_spent or 0 for d in data[:10]]
+
+    return {
+        "data": {
+            "labels": labels,
+            "datasets": [
+                {"name": _("Budget"), "values": budgets},
+                {"name": _("Spent"), "values": spent},
+            ],
+        },
+        "type": "bar",
+        "colors": ["#2ecc71", "#e67e22"],
+    }
