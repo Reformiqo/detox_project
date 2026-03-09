@@ -13,6 +13,7 @@ def after_install():
 def after_migrate():
     create_custom_fields()
     create_project_types()
+    patch_fm_wbs_fields_to_link()
 
 
 def create_custom_fields():
@@ -389,3 +390,53 @@ Spent: {{ frappe.format_value(doc.total_spent, {'fieldtype': 'Currency'}) }}</p>
         frappe.db.commit()
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Notification Setup Error")
+
+
+def patch_fm_wbs_fields_to_link():
+    """Convert budgeting_tool's Financial Model WBS fields from Data to Link (dropdown).
+
+    Finds child tables of Financial Model that have wbs_category / sub_wbs
+    fields and converts them to Link fields pointing to WBS Element / Sub WBS Element.
+    Runs on every migrate — Property Setters are idempotent.
+    """
+    if not frappe.db.exists("DocType", "Financial Model"):
+        return
+
+    fm_meta = frappe.get_meta("Financial Model")
+    child_tables = [
+        df.options for df in fm_meta.fields
+        if df.fieldtype == "Table" and df.options
+    ]
+
+    field_map = {
+        "wbs_category": ("Link", "WBS Element"),
+        "sub_wbs": ("Link", "Sub WBS Element"),
+    }
+
+    for ct in child_tables:
+        if not frappe.db.exists("DocType", ct):
+            continue
+        ct_meta = frappe.get_meta(ct)
+        for fieldname, (target_type, target_options) in field_map.items():
+            df = ct_meta.get_field(fieldname)
+            if not df:
+                continue
+            if df.fieldtype == target_type and df.options == target_options:
+                continue
+            for prop, value in [("fieldtype", target_type), ("options", target_options)]:
+                ps_name = f"{ct}-{fieldname}-{prop}"
+                if frappe.db.exists("Property Setter", ps_name):
+                    frappe.db.set_value("Property Setter", ps_name, "value", value)
+                else:
+                    frappe.get_doc({
+                        "doctype": "Property Setter",
+                        "name": ps_name,
+                        "doctype_or_field": "DocField",
+                        "doc_type": ct,
+                        "field_name": fieldname,
+                        "property": prop,
+                        "value": value,
+                        "property_type": "Data",
+                    }).insert(ignore_permissions=True)
+
+    frappe.db.commit()
