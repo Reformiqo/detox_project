@@ -14,11 +14,19 @@ def validate_project(doc, method):
             doc.custom_total_spent / doc.custom_total_budget * 100
         )
         doc.custom_budget_remaining = flt(doc.custom_total_budget) - flt(doc.custom_total_spent)
-    # Sync Financial Model status
+    # Sync Financial Model status (from budgeting_tool's FM)
     if doc.custom_financial_model:
-        fm_status = frappe.db.get_value("Financial Model", doc.custom_financial_model, "model_status")
-        if fm_status:
-            doc.custom_financial_model_status = fm_status
+        fm_data = frappe.db.get_value(
+            "Financial Model", doc.custom_financial_model,
+            ["docstatus", "total_project_cost", "project_irr"], as_dict=True
+        )
+        if fm_data:
+            if fm_data.docstatus == 1:
+                doc.custom_financial_model_status = "Approved"
+            elif fm_data.docstatus == 2:
+                doc.custom_financial_model_status = "Cancelled"
+            else:
+                doc.custom_financial_model_status = "Pending"
     # SEPPL LOI warning
     if doc.company and "SEPPL" in (doc.company or ""):
         if not doc.get("custom_loi_reference"):
@@ -171,34 +179,41 @@ def on_pi_submit(doc, method):
 
 @frappe.whitelist()
 def create_project_from_model(financial_model):
+    """Create a Project from budgeting_tool's Financial Model."""
     fm = frappe.get_doc("Financial Model", financial_model)
-
     if fm.docstatus != 1:
         frappe.throw(_("Financial Model must be submitted first"))
+    if fm.project:
+        frappe.throw(_("Financial Model is already linked to Project {0}").format(fm.project))
 
     project = frappe.new_doc("Project")
-    project.project_name = fm.model_name
+    project.project_name = fm.title or fm.name
     project.company = fm.company
-    project.project_type = fm.project_type
     project.custom_financial_model = fm.name
-    project.custom_total_budget = fm.total_project_budget
-    project.custom_material_budget = fm.total_material_budget
-    project.custom_service_budget = fm.total_service_budget
+    project.custom_total_budget = flt(fm.total_project_cost)
     project.status = "Open"
+
+    type_map = {
+        "Legacy Waste": "EPC", "Fresh Waste": "EPC", "Waste Water": "EPC",
+        "CBG": "EPC", "Lab Testing": "O&M",
+    }
+    if fm.get("model_type"):
+        project.project_type = type_map.get(fm.model_type, "EPC")
+        project.custom_project_profile = fm.model_type
+
     project.insert(ignore_permissions=True)
 
-    wbs_elements = frappe.get_all(
-        "WBS Element",
-        filters={"financial_model": fm.name},
-        pluck="name",
-    )
+    # Back-link FM to Project
+    frappe.db.set_value("Financial Model", fm.name, "project", project.name, update_modified=False)
+
+    # Link any WBS Elements pre-created for this FM
+    wbs_elements = frappe.get_all("WBS Element", filters={"financial_model": fm.name}, pluck="name")
     for wbs_name in wbs_elements:
         frappe.db.set_value("WBS Element", wbs_name, "project", project.name)
 
     frappe.msgprint(
-        _("Project {0} created successfully").format(project.name),
-        indicator="green",
-        alert=True,
+        _("Project {0} created from Financial Model").format(project.name),
+        indicator="green", alert=True,
     )
     return project.name
 
