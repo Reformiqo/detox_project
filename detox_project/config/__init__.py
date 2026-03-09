@@ -8,7 +8,6 @@ def get_data():
             "items": [
                 {"type": "doctype", "name": "WBS Element", "label": _("WBS Element")},
                 {"type": "doctype", "name": "Sub WBS Element", "label": _("Sub WBS Element")},
-                {"type": "doctype", "name": "Financial Model", "label": _("Financial Model")},
             ],
         },
         {
