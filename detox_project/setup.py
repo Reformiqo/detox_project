@@ -13,6 +13,7 @@ def after_install():
 def after_migrate():
     create_custom_fields()
     create_project_types()
+    patch_fm_wbs_fields_to_link()
 
 
 def create_custom_fields():
@@ -389,3 +390,57 @@ Spent: {{ frappe.format_value(doc.total_spent, {'fieldtype': 'Currency'}) }}</p>
         frappe.db.commit()
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Notification Setup Error")
+
+
+def patch_fm_wbs_fields_to_link():
+    """Convert budgeting_tool's Financial Model child-table WBS fields from Data to Link.
+
+    Uses Property Setters so we don't need to modify budgeting_tool source code.
+    Runs on every migrate — Property Setters are idempotent.
+    """
+    if not frappe.db.exists("DocType", "Financial Model"):
+        return
+
+    # Find all child tables of Financial Model
+    meta = frappe.get_meta("Financial Model")
+    child_tables = [
+        df.options for df in meta.fields
+        if df.fieldtype == "Table" and df.options
+    ]
+
+    field_map = {
+        "wbs_category": ("Link", "WBS Element"),
+        "sub_wbs": ("Link", "Sub WBS Element"),
+    }
+
+    for child_dt in child_tables:
+        child_meta = frappe.get_meta(child_dt)
+        for fieldname, (new_fieldtype, new_options) in field_map.items():
+            if not child_meta.has_field(fieldname):
+                continue
+
+            # Create or update Property Setter for fieldtype
+            _set_property(child_dt, fieldname, "fieldtype", new_fieldtype)
+            # Create or update Property Setter for options (Link target)
+            _set_property(child_dt, fieldname, "options", new_options)
+
+    frappe.db.commit()
+
+
+def _set_property(doctype, fieldname, prop, value):
+    """Create or update a single Property Setter."""
+    ps_name = f"{doctype}-{fieldname}-{prop}"
+    if frappe.db.exists("Property Setter", ps_name):
+        frappe.db.set_value("Property Setter", ps_name, "value", value)
+    else:
+        frappe.get_doc({
+            "doctype": "Property Setter",
+            "name": ps_name,
+            "doctype_or_field": "DocField",
+            "doc_type": doctype,
+            "field_name": fieldname,
+            "property": prop,
+            "value": value,
+            "property_type": "Data",
+            "module": "Detox Project",
+        }).insert(ignore_permissions=True)
