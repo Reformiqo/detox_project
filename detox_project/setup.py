@@ -629,7 +629,6 @@ def create_project_types():
 					"project_type": pt,
 				}
 			).insert(ignore_permissions=True)
-	frappe.db.commit()
 
 
 def setup_workflows():
@@ -760,8 +759,6 @@ def patch_fm_wbs_fields_to_link():
 			_set_property(child_dt, fieldname, "fieldtype", new_fieldtype)
 			# Create or update Property Setter for options (Link target)
 			_set_property(child_dt, fieldname, "options", new_options)
-
-	frappe.db.commit()
 
 
 def _set_property(doctype, fieldname, prop, value):
