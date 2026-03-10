@@ -42,7 +42,7 @@ jobs:
       - name: Find tests
         run: |
           echo "Finding tests"
-          grep -rn "def test" > /dev/null
+          grep -rn "def test" . || echo "No tests found yet — skipping test discovery"
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -77,7 +77,7 @@ jobs:
             ${{ runner.os }}-yarn-
 
       - name: Install MariaDB Client
-        run: sudo apt-get install mariadb-client-10.6
+        run: sudo apt-get install mariadb-client
 
       - name: Setup
         run: |

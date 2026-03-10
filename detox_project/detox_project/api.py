@@ -2,406 +2,448 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-
 # ---------------------------------------------------------------------------
 # Document Event Hooks
 # ---------------------------------------------------------------------------
 
+
 def validate_project(doc, method):
-    """Validate Project — budget calc, FM status sync, LOI check."""
-    if doc.custom_total_budget and doc.custom_total_spent:
-        doc.custom_budget_utilization_pct = (
-            doc.custom_total_spent / doc.custom_total_budget * 100
-        )
-        doc.custom_budget_remaining = flt(doc.custom_total_budget) - flt(doc.custom_total_spent)
-    # Sync Financial Model status (from budgeting_tool's FM)
-    if doc.custom_financial_model:
-        fm_data = frappe.db.get_value(
-            "Financial Model", doc.custom_financial_model,
-            ["docstatus", "total_project_cost", "project_irr"], as_dict=True
-        )
-        if fm_data:
-            if fm_data.docstatus == 1:
-                doc.custom_financial_model_status = "Approved"
-            elif fm_data.docstatus == 2:
-                doc.custom_financial_model_status = "Cancelled"
-            else:
-                doc.custom_financial_model_status = "Pending"
-    # SEPPL LOI warning
-    if doc.company and "SEPPL" in (doc.company or ""):
-        if not doc.get("custom_loi_reference"):
-            frappe.msgprint(
-                _("LOI Reference is recommended for SEPPL projects."),
-                indicator="orange", alert=True
-            )
+	"""Validate Project — budget calc, FM status sync, LOI check."""
+	if doc.custom_total_budget and doc.custom_total_spent:
+		doc.custom_budget_utilization_pct = doc.custom_total_spent / doc.custom_total_budget * 100
+		doc.custom_budget_remaining = flt(doc.custom_total_budget) - flt(doc.custom_total_spent)
+	# Sync Financial Model status (from budgeting_tool's FM)
+	if doc.custom_financial_model:
+		fm_data = frappe.db.get_value(
+			"Financial Model",
+			doc.custom_financial_model,
+			["docstatus", "total_project_cost", "project_irr"],
+			as_dict=True,
+		)
+		if fm_data:
+			if fm_data.docstatus == 1:
+				doc.custom_financial_model_status = "Approved"
+			elif fm_data.docstatus == 2:
+				doc.custom_financial_model_status = "Cancelled"
+			else:
+				doc.custom_financial_model_status = "Pending"
+	# SEPPL LOI warning
+	if doc.company and "SEPPL" in (doc.company or ""):
+		if not doc.get("custom_loi_reference"):
+			frappe.msgprint(
+				_("LOI Reference is recommended for SEPPL projects."), indicator="orange", alert=True
+			)
 
 
 def on_project_update(doc, method):
-    if doc.status == "Cancelled":
-        wbs_elements = frappe.get_all(
-            "WBS Element",
-            filters={"project": doc.name, "status": ["!=", "Cancelled"]},
-            pluck="name",
-        )
-        for wbs_name in wbs_elements:
-            frappe.db.set_value("WBS Element", wbs_name, "status", "Cancelled")
+	if doc.status == "Cancelled":
+		wbs_elements = frappe.get_all(
+			"WBS Element",
+			filters={"project": doc.name, "status": ["!=", "Cancelled"]},
+			pluck="name",
+		)
+		for wbs_name in wbs_elements:
+			frappe.db.set_value("WBS Element", wbs_name, "status", "Cancelled")
 
-    elif doc.status == "Completed":
-        wbs_elements = frappe.get_all(
-            "WBS Element",
-            filters={"project": doc.name, "status": "Active"},
-            pluck="name",
-        )
-        for wbs_name in wbs_elements:
-            frappe.db.set_value("WBS Element", wbs_name, "status", "Completed")
+	elif doc.status == "Completed":
+		wbs_elements = frappe.get_all(
+			"WBS Element",
+			filters={"project": doc.name, "status": "Active"},
+			pluck="name",
+		)
+		for wbs_name in wbs_elements:
+			frappe.db.set_value("WBS Element", wbs_name, "status", "Completed")
 
 
 def validate_material_request_budget(doc, method):
-    """HARD block: MR amount must not exceed WBS remaining budget by type."""
-    if not doc.custom_wbs_element:
-        return
+	"""HARD block: MR amount must not exceed WBS remaining budget by type."""
+	if not doc.custom_wbs_element:
+		return
 
-    wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
-    if not wbs.total_budget:
-        return
+	wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
+	if not wbs.total_budget:
+		return
 
-    mr_total = sum(flt(item.amount) for item in doc.items)
-    request_type = doc.custom_request_type or "Material"
+	mr_total = sum(flt(item.amount) for item in doc.items)
+	request_type = doc.custom_request_type or "Material"
 
-    if request_type == "Material":
-        budget = flt(wbs.material_budget)
-        spent = flt(wbs.material_spent)
-    else:
-        budget = flt(wbs.service_budget)
-        spent = flt(wbs.service_spent)
+	if request_type == "Material":
+		budget = flt(wbs.material_budget)
+		spent = flt(wbs.material_spent)
+	else:
+		budget = flt(wbs.service_budget)
+		spent = flt(wbs.service_spent)
 
-    remaining = budget - spent
+	remaining = budget - spent
 
-    # HARD BLOCK if MR exceeds remaining budget
-    if mr_total > remaining and budget > 0:
-        frappe.throw(
-            _("BUDGET EXCEEDED: This {0} Request ({1}) exceeds remaining WBS '{2}' "
-              "{0} budget of {3}.\n\n"
-              "Budget: {4} | Already Spent: {5} | Remaining: {3}\n\n"
-              "Please revise the request amount or get a budget increase approved.").format(
-                request_type,
-                frappe.format_value(mr_total, {"fieldtype": "Currency"}),
-                wbs.wbs_name,
-                frappe.format_value(remaining, {"fieldtype": "Currency"}),
-                frappe.format_value(budget, {"fieldtype": "Currency"}),
-                frappe.format_value(spent, {"fieldtype": "Currency"}),
-            ),
-            title=_("Budget Limit Exceeded"),
-        )
+	# HARD BLOCK if MR exceeds remaining budget
+	if mr_total > remaining and budget > 0:
+		frappe.throw(
+			_(
+				"BUDGET EXCEEDED: This {0} Request ({1}) exceeds remaining WBS '{2}' "
+				"{0} budget of {3}.\n\n"
+				"Budget: {4} | Already Spent: {5} | Remaining: {3}\n\n"
+				"Please revise the request amount or get a budget increase approved."
+			).format(
+				request_type,
+				frappe.format_value(mr_total, {"fieldtype": "Currency"}),
+				wbs.wbs_name,
+				frappe.format_value(remaining, {"fieldtype": "Currency"}),
+				frappe.format_value(budget, {"fieldtype": "Currency"}),
+				frappe.format_value(spent, {"fieldtype": "Currency"}),
+			),
+			title=_("Budget Limit Exceeded"),
+		)
 
-    # Warning at 80% (still allows save)
-    new_total = spent + mr_total
-    if budget > 0:
-        new_pct = new_total / budget * 100
-        if new_pct >= 80 and mr_total <= remaining:
-            frappe.msgprint(
-                _("This {0} Request will bring WBS '{1}' {0} budget to {2}% utilization.").format(
-                    request_type, wbs.wbs_name, f"{new_pct:.1f}"
-                ),
-                indicator="orange",
-                title=_("Budget Warning"),
-            )
+	# Warning at 80% (still allows save)
+	new_total = spent + mr_total
+	if budget > 0:
+		new_pct = new_total / budget * 100
+		if new_pct >= 80 and mr_total <= remaining:
+			frappe.msgprint(
+				_("This {0} Request will bring WBS '{1}' {0} budget to {2}% utilization.").format(
+					request_type, wbs.wbs_name, f"{new_pct:.1f}"
+				),
+				indicator="orange",
+				title=_("Budget Warning"),
+			)
 
 
 def validate_po_budget(doc, method):
-    """HARD block: PO amount must not exceed WBS remaining budget by type."""
-    if not doc.custom_wbs_element:
-        return
+	"""HARD block: PO amount must not exceed WBS remaining budget by type."""
+	if not doc.custom_wbs_element:
+		return
 
-    wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
-    if not wbs.total_budget:
-        return
+	wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
+	if not wbs.total_budget:
+		return
 
-    po_total = flt(doc.grand_total)
-    po_type = doc.custom_po_type or "Material"
+	po_total = flt(doc.grand_total)
+	po_type = doc.custom_po_type or "Material"
 
-    if po_type == "Material":
-        budget = flt(wbs.material_budget)
-        spent = flt(wbs.material_spent)
-    else:
-        budget = flt(wbs.service_budget)
-        spent = flt(wbs.service_spent)
+	if po_type == "Material":
+		budget = flt(wbs.material_budget)
+		spent = flt(wbs.material_spent)
+	else:
+		budget = flt(wbs.service_budget)
+		spent = flt(wbs.service_spent)
 
-    remaining = budget - spent
+	remaining = budget - spent
 
-    if po_total > remaining and budget > 0:
-        frappe.throw(
-            _("BUDGET EXCEEDED: This {0} PO ({1}) exceeds remaining WBS '{2}' "
-              "{0} budget of {3}.\n\n"
-              "Budget: {4} | Already Spent: {5} | Remaining: {3}\n\n"
-              "Please revise the PO amount or request a budget increase.").format(
-                po_type,
-                frappe.format_value(po_total, {"fieldtype": "Currency"}),
-                wbs.wbs_name,
-                frappe.format_value(remaining, {"fieldtype": "Currency"}),
-                frappe.format_value(budget, {"fieldtype": "Currency"}),
-                frappe.format_value(spent, {"fieldtype": "Currency"}),
-            ),
-            title=_("Budget Limit Exceeded"),
-        )
+	if po_total > remaining and budget > 0:
+		frappe.throw(
+			_(
+				"BUDGET EXCEEDED: This {0} PO ({1}) exceeds remaining WBS '{2}' "
+				"{0} budget of {3}.\n\n"
+				"Budget: {4} | Already Spent: {5} | Remaining: {3}\n\n"
+				"Please revise the PO amount or request a budget increase."
+			).format(
+				po_type,
+				frappe.format_value(po_total, {"fieldtype": "Currency"}),
+				wbs.wbs_name,
+				frappe.format_value(remaining, {"fieldtype": "Currency"}),
+				frappe.format_value(budget, {"fieldtype": "Currency"}),
+				frappe.format_value(spent, {"fieldtype": "Currency"}),
+			),
+			title=_("Budget Limit Exceeded"),
+		)
 
-    # Warning at 80%
-    new_total = spent + po_total
-    if budget > 0:
-        new_pct = new_total / budget * 100
-        if new_pct >= 80 and po_total <= remaining:
-            frappe.msgprint(
-                _("This PO will bring WBS '{0}' {1} budget to {2}% utilization.").format(
-                    wbs.wbs_name, po_type, f"{new_pct:.1f}"
-                ),
-                indicator="orange",
-                title=_("Budget Warning"),
-            )
+	# Warning at 80%
+	new_total = spent + po_total
+	if budget > 0:
+		new_pct = new_total / budget * 100
+		if new_pct >= 80 and po_total <= remaining:
+			frappe.msgprint(
+				_("This PO will bring WBS '{0}' {1} budget to {2}% utilization.").format(
+					wbs.wbs_name, po_type, f"{new_pct:.1f}"
+				),
+				indicator="orange",
+				title=_("Budget Warning"),
+			)
 
 
 def on_po_submit(doc, method):
-    _update_wbs_spent(doc)
+	_update_wbs_spent(doc)
 
 
 def on_pi_submit(doc, method):
-    if not doc.custom_wbs_element:
-        return
-    try:
-        wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
-        wbs.refresh_spent_amounts()
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "WBS PI Submit Update Error")
+	if not doc.custom_wbs_element:
+		return
+	try:
+		wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
+		wbs.refresh_spent_amounts()
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "WBS PI Submit Update Error")
 
 
 # ---------------------------------------------------------------------------
 # Whitelisted APIs
 # ---------------------------------------------------------------------------
 
+
 @frappe.whitelist()
 def create_project_from_model(financial_model):
-    """Create a Project from budgeting_tool's Financial Model."""
-    fm = frappe.get_doc("Financial Model", financial_model)
-    if fm.docstatus != 1:
-        frappe.throw(_("Financial Model must be submitted first"))
-    if fm.project:
-        frappe.throw(_("Financial Model is already linked to Project {0}").format(fm.project))
+	"""Create a Project from budgeting_tool's Financial Model."""
+	fm = frappe.get_doc("Financial Model", financial_model)
+	if fm.docstatus != 1:
+		frappe.throw(_("Financial Model must be submitted first"))
+	if fm.project:
+		frappe.throw(_("Financial Model is already linked to Project {0}").format(fm.project))
 
-    project = frappe.new_doc("Project")
-    project.project_name = fm.title or fm.name
-    project.company = fm.company
-    project.custom_financial_model = fm.name
-    project.custom_total_budget = flt(fm.total_project_cost)
-    project.status = "Open"
+	project = frappe.new_doc("Project")
+	project.project_name = fm.title or fm.name
+	project.company = fm.company
+	project.custom_financial_model = fm.name
+	project.custom_total_budget = flt(fm.total_project_cost)
+	project.status = "Open"
 
-    type_map = {
-        "Legacy Waste": "EPC", "Fresh Waste": "EPC", "Waste Water": "EPC",
-        "CBG": "EPC", "Lab Testing": "O&M",
-    }
-    if fm.get("model_type"):
-        project.project_type = type_map.get(fm.model_type, "EPC")
-        project.custom_project_profile = fm.model_type
+	type_map = {
+		"Legacy Waste": "EPC",
+		"Fresh Waste": "EPC",
+		"Waste Water": "EPC",
+		"CBG": "EPC",
+		"Lab Testing": "O&M",
+	}
+	if fm.get("model_type"):
+		project.project_type = type_map.get(fm.model_type, "EPC")
+		project.custom_project_profile = fm.model_type
 
-    project.insert(ignore_permissions=True)
+	project.insert(ignore_permissions=True)
 
-    # Back-link FM to Project
-    frappe.db.set_value("Financial Model", fm.name, "project", project.name, update_modified=False)
+	# Back-link FM to Project
+	frappe.db.set_value("Financial Model", fm.name, "project", project.name, update_modified=False)
 
-    # Link any WBS Elements pre-created for this FM
-    wbs_elements = frappe.get_all("WBS Element", filters={"financial_model": fm.name}, pluck="name")
-    for wbs_name in wbs_elements:
-        frappe.db.set_value("WBS Element", wbs_name, "project", project.name)
+	# Link any WBS Elements pre-created for this FM
+	wbs_elements = frappe.get_all("WBS Element", filters={"financial_model": fm.name}, pluck="name")
+	for wbs_name in wbs_elements:
+		frappe.db.set_value("WBS Element", wbs_name, "project", project.name)
 
-    frappe.msgprint(
-        _("Project {0} created from Financial Model").format(project.name),
-        indicator="green", alert=True,
-    )
-    return project.name
+	frappe.msgprint(
+		_("Project {0} created from Financial Model").format(project.name),
+		indicator="green",
+		alert=True,
+	)
+	return project.name
 
 
 @frappe.whitelist()
 def get_project_budget_dashboard(project):
-    wbs_elements = frappe.get_all(
-        "WBS Element",
-        filters={"project": project, "status": ["!=", "Cancelled"]},
-        fields=[
-            "name", "wbs_name", "wbs_type", "status",
-            "material_budget", "service_budget", "total_budget",
-            "material_spent", "service_spent", "total_spent",
-            "overall_utilization_pct",
-        ],
-        order_by="creation",
-    )
+	wbs_elements = frappe.get_all(
+		"WBS Element",
+		filters={"project": project, "status": ["!=", "Cancelled"]},
+		fields=[
+			"name",
+			"wbs_name",
+			"wbs_type",
+			"status",
+			"material_budget",
+			"service_budget",
+			"total_budget",
+			"material_spent",
+			"service_spent",
+			"total_spent",
+			"overall_utilization_pct",
+		],
+		order_by="creation",
+	)
 
-    totals = {
-        "total_budget": sum(w.total_budget or 0 for w in wbs_elements),
-        "total_spent": sum(w.total_spent or 0 for w in wbs_elements),
-        "material_budget": sum(w.material_budget or 0 for w in wbs_elements),
-        "service_budget": sum(w.service_budget or 0 for w in wbs_elements),
-        "material_spent": sum(w.material_spent or 0 for w in wbs_elements),
-        "service_spent": sum(w.service_spent or 0 for w in wbs_elements),
-    }
+	totals = {
+		"total_budget": sum(w.total_budget or 0 for w in wbs_elements),
+		"total_spent": sum(w.total_spent or 0 for w in wbs_elements),
+		"material_budget": sum(w.material_budget or 0 for w in wbs_elements),
+		"service_budget": sum(w.service_budget or 0 for w in wbs_elements),
+		"material_spent": sum(w.material_spent or 0 for w in wbs_elements),
+		"service_spent": sum(w.service_spent or 0 for w in wbs_elements),
+	}
 
-    if totals["total_budget"]:
-        totals["utilization_pct"] = totals["total_spent"] / totals["total_budget"] * 100
-    else:
-        totals["utilization_pct"] = 0
+	if totals["total_budget"]:
+		totals["utilization_pct"] = totals["total_spent"] / totals["total_budget"] * 100
+	else:
+		totals["utilization_pct"] = 0
 
-    return {"wbs_elements": wbs_elements, "totals": totals}
+	return {"wbs_elements": wbs_elements, "totals": totals}
 
 
 @frappe.whitelist()
 def recalculate_project_budget(project):
-    wbs_elements = frappe.get_all(
-        "WBS Element",
-        filters={"project": project, "status": ["!=", "Cancelled"]},
-        pluck="name",
-    )
-    for wbs_name in wbs_elements:
-        wbs = frappe.get_doc("WBS Element", wbs_name)
-        wbs.refresh_spent_amounts()
+	wbs_elements = frappe.get_all(
+		"WBS Element",
+		filters={"project": project, "status": ["!=", "Cancelled"]},
+		pluck="name",
+	)
+	for wbs_name in wbs_elements:
+		wbs = frappe.get_doc("WBS Element", wbs_name)
+		wbs.refresh_spent_amounts()
 
-    frappe.msgprint(
-        _("Budget recalculated for {0} WBS elements").format(len(wbs_elements)),
-        indicator="green",
-        alert=True,
-    )
+	frappe.msgprint(
+		_("Budget recalculated for {0} WBS elements").format(len(wbs_elements)),
+		indicator="green",
+		alert=True,
+	)
 
 
 @frappe.whitelist()
 def recalculate_all_wbs_budgets(wbs_element=None):
-    if wbs_element:
-        wbs = frappe.get_doc("WBS Element", wbs_element)
-        wbs.refresh_spent_amounts()
-    else:
-        wbs_elements = frappe.get_all(
-            "WBS Element", filters={"status": "Active"}, pluck="name",
-        )
-        for wbs_name in wbs_elements:
-            wbs = frappe.get_doc("WBS Element", wbs_name)
-            wbs.refresh_spent_amounts()
+	if wbs_element:
+		wbs = frappe.get_doc("WBS Element", wbs_element)
+		wbs.refresh_spent_amounts()
+	else:
+		wbs_elements = frappe.get_all(
+			"WBS Element",
+			filters={"status": "Active"},
+			pluck="name",
+		)
+		for wbs_name in wbs_elements:
+			wbs = frappe.get_doc("WBS Element", wbs_name)
+			wbs.refresh_spent_amounts()
 
 
 @frappe.whitelist()
 def get_budget_utilization(project=None, wbs_element=None):
-    filters = {"status": ["!=", "Cancelled"]}
-    if project:
-        filters["project"] = project
-    if wbs_element:
-        filters["name"] = wbs_element
+	filters = {"status": ["!=", "Cancelled"]}
+	if project:
+		filters["project"] = project
+	if wbs_element:
+		filters["name"] = wbs_element
 
-    return frappe.get_all(
-        "WBS Element",
-        filters=filters,
-        fields=[
-            "name", "wbs_name", "wbs_type", "project", "status",
-            "material_budget", "service_budget", "total_budget",
-            "material_spent", "service_spent", "total_spent",
-            "material_utilization_pct", "service_utilization_pct",
-            "overall_utilization_pct",
-        ],
-        order_by="project, creation",
-    )
+	return frappe.get_all(
+		"WBS Element",
+		filters=filters,
+		fields=[
+			"name",
+			"wbs_name",
+			"wbs_type",
+			"project",
+			"status",
+			"material_budget",
+			"service_budget",
+			"total_budget",
+			"material_spent",
+			"service_spent",
+			"total_spent",
+			"material_utilization_pct",
+			"service_utilization_pct",
+			"overall_utilization_pct",
+		],
+		order_by="project, creation",
+	)
 
 
 @frappe.whitelist()
 def get_project_financial_summary(project):
-    wbs_data = frappe.get_all(
-        "WBS Element",
-        filters={"project": project, "status": ["!=", "Cancelled"]},
-        fields=["sum(total_budget) as budget", "sum(total_spent) as spent"],
-    )
+	wbs_data = frappe.get_all(
+		"WBS Element",
+		filters={"project": project, "status": ["!=", "Cancelled"]},
+		fields=["sum(total_budget) as budget", "sum(total_spent) as spent"],
+	)
 
-    wbs_names = frappe.get_all(
-        "WBS Element", filters={"project": project}, pluck="name"
-    ) or [""]
+	wbs_names = frappe.get_all("WBS Element", filters={"project": project}, pluck="name") or [""]
 
-    mr_count = frappe.db.count("Material Request", {
-        "custom_wbs_element": ["in", wbs_names],
-        "docstatus": ["<", 2],
-    })
+	mr_count = frappe.db.count(
+		"Material Request",
+		{
+			"custom_wbs_element": ["in", wbs_names],
+			"docstatus": ["<", 2],
+		},
+	)
 
-    po_data = frappe.db.sql("""
+	po_data = frappe.db.sql(
+		"""
         SELECT COUNT(*) as count, COALESCE(SUM(grand_total), 0) as total
         FROM `tabPurchase Order`
         WHERE custom_wbs_element IN (
             SELECT name FROM `tabWBS Element` WHERE project = %s
         ) AND docstatus = 1
-    """, project, as_dict=True)[0]
+    """,
+		project,
+		as_dict=True,
+	)[0]
 
-    return {
-        "budget": (wbs_data[0].budget or 0) if wbs_data else 0,
-        "spent": (wbs_data[0].spent or 0) if wbs_data else 0,
-        "mr_count": mr_count,
-        "po_count": po_data.count,
-        "po_total": po_data.total,
-    }
+	return {
+		"budget": (wbs_data[0].budget or 0) if wbs_data else 0,
+		"spent": (wbs_data[0].spent or 0) if wbs_data else 0,
+		"mr_count": mr_count,
+		"po_count": po_data.count,
+		"po_total": po_data.total,
+	}
 
 
 # ---------------------------------------------------------------------------
 # Scheduler
 # ---------------------------------------------------------------------------
 
+
 def send_budget_alerts():
-    """Daily: send alerts for WBS elements above 80% utilization."""
-    wbs_elements = frappe.get_all(
-        "WBS Element",
-        filters={"status": "Active", "overall_utilization_pct": [">=", 80]},
-        fields=["name", "wbs_name", "project", "total_budget", "total_spent",
-                 "overall_utilization_pct", "person_responsible"],
-    )
+	"""Daily: send alerts for WBS elements above 80% utilization."""
+	wbs_elements = frappe.get_all(
+		"WBS Element",
+		filters={"status": "Active", "overall_utilization_pct": [">=", 80]},
+		fields=[
+			"name",
+			"wbs_name",
+			"project",
+			"total_budget",
+			"total_spent",
+			"overall_utilization_pct",
+			"person_responsible",
+		],
+	)
 
-    if not wbs_elements:
-        return
+	if not wbs_elements:
+		return
 
-    for wbs in wbs_elements:
-        recipients = []
-        if wbs.person_responsible:
-            email = frappe.db.get_value("Employee", wbs.person_responsible, "user_id")
-            if email:
-                recipients.append(email)
+	for wbs in wbs_elements:
+		recipients = []
+		if wbs.person_responsible:
+			email = frappe.db.get_value("Employee", wbs.person_responsible, "user_id")
+			if email:
+				recipients.append(email)
 
-        if wbs.project:
-            pm_email = frappe.db.get_value("Project", wbs.project, "custom_project_approver")
-            if pm_email:
-                recipients.append(pm_email)
+		if wbs.project:
+			pm_email = frappe.db.get_value("Project", wbs.project, "custom_project_approver")
+			if pm_email:
+				recipients.append(pm_email)
 
-        if not recipients:
-            recipients = [frappe.db.get_value("User", "Administrator", "email")]
+		if not recipients:
+			recipients = [frappe.db.get_value("User", "Administrator", "email")]
 
-        pct = wbs.overall_utilization_pct or 0
-        subject = _("Budget Alert: {0} at {1}% utilization").format(wbs.wbs_name, f"{pct:.0f}")
+		pct = wbs.overall_utilization_pct or 0
+		subject = _("Budget Alert: {0} at {1}% utilization").format(wbs.wbs_name, f"{pct:.0f}")
 
-        frappe.sendmail(
-            recipients=list(set(recipients)),
-            subject=subject,
-            message=_(
-                "WBS Element <b>{0}</b> ({1}) has reached <b>{2}%</b> budget utilization.<br>"
-                "Budget: {3}<br>Spent: {4}<br>"
-                "Please review and take necessary action."
-            ).format(
-                wbs.wbs_name, wbs.name, f"{pct:.1f}",
-                frappe.format_value(wbs.total_budget, {"fieldtype": "Currency"}),
-                frappe.format_value(wbs.total_spent, {"fieldtype": "Currency"}),
-            ),
-            now=True,
-        )
+		frappe.sendmail(
+			recipients=list(set(recipients)),
+			subject=subject,
+			message=_(
+				"WBS Element <b>{0}</b> ({1}) has reached <b>{2}%</b> budget utilization.<br>"
+				"Budget: {3}<br>Spent: {4}<br>"
+				"Please review and take necessary action."
+			).format(
+				wbs.wbs_name,
+				wbs.name,
+				f"{pct:.1f}",
+				frappe.format_value(wbs.total_budget, {"fieldtype": "Currency"}),
+				frappe.format_value(wbs.total_spent, {"fieldtype": "Currency"}),
+			),
+			now=True,
+		)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _update_wbs_spent(doc):
-    if doc.custom_wbs_element:
-        try:
-            wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
-            wbs.refresh_spent_amounts()
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "WBS PO Submit Update Error")
 
-    if doc.custom_sub_wbs_element:
-        try:
-            sub_wbs = frappe.get_doc("Sub WBS Element", doc.custom_sub_wbs_element)
-            sub_wbs.refresh_spent_amounts()
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "Sub WBS PO Submit Update Error")
+def _update_wbs_spent(doc):
+	if doc.custom_wbs_element:
+		try:
+			wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
+			wbs.refresh_spent_amounts()
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "WBS PO Submit Update Error")
+
+	if doc.custom_sub_wbs_element:
+		try:
+			sub_wbs = frappe.get_doc("Sub WBS Element", doc.custom_sub_wbs_element)
+			sub_wbs.refresh_spent_amounts()
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Sub WBS PO Submit Update Error")
