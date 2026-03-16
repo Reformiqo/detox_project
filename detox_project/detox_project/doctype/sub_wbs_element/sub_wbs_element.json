@@ -1,230 +1,232 @@
 {
-    "actions": [],
-    "autoname": "hash",
-    "creation": "2026-03-07 10:00:00.000000",
-    "doctype": "DocType",
-    "engine": "InnoDB",
-    "field_order": [
-        "sub_wbs_name",
-        "main_wbs_element",
-        "parent_sub_wbs",
-        "column_break_1",
-        "project",
-        "company",
-        "status",
-        "section_break_details",
-        "site",
-        "cost_center",
-        "column_break_details",
-        "person_responsible",
-        "section_break_budget",
-        "material_budget",
-        "material_spent",
-        "column_break_budget",
-        "service_budget",
-        "service_spent",
-        "section_break_totals",
-        "total_budget",
-        "total_spent",
-        "column_break_totals",
-        "overall_utilization_pct",
-        "section_break_remarks",
-        "remarks"
-    ],
-    "fields": [
-        {
-            "fieldname": "sub_wbs_name",
-            "fieldtype": "Data",
-            "label": "Sub WBS Name",
-            "reqd": 1,
-            "in_list_view": 1
-        },
-        {
-            "fieldname": "main_wbs_element",
-            "fieldtype": "Link",
-            "label": "Main WBS Element",
-            "options": "WBS Element",
-            "reqd": 1,
-            "in_list_view": 1,
-            "in_standard_filter": 1
-        },
-        {
-            "fieldname": "parent_sub_wbs",
-            "fieldtype": "Link",
-            "label": "Parent Sub WBS",
-            "options": "Sub WBS Element"
-        },
-        {
-            "fieldname": "column_break_1",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "project",
-            "fieldtype": "Link",
-            "label": "Project",
-            "options": "Project",
-            "in_standard_filter": 1
-        },
-        {
-            "fieldname": "company",
-            "fieldtype": "Link",
-            "label": "Company",
-            "options": "Company",
-            "reqd": 1
-        },
-        {
-            "fieldname": "status",
-            "fieldtype": "Select",
-            "label": "Status",
-            "options": "Active\nOn Hold\nCompleted\nCancelled",
-            "default": "Active",
-            "in_list_view": 1,
-            "in_standard_filter": 1
-        },
-        {
-            "fieldname": "section_break_details",
-            "fieldtype": "Section Break",
-            "label": "Details"
-        },
-        {
-            "fieldname": "site",
-            "fieldtype": "Data",
-            "label": "Site"
-        },
-        {
-            "fieldname": "cost_center",
-            "fieldtype": "Link",
-            "label": "Cost Center",
-            "options": "Cost Center"
-        },
-        {
-            "fieldname": "column_break_details",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "person_responsible",
-            "fieldtype": "Link",
-            "label": "Person Responsible",
-            "options": "Employee"
-        },
-        {
-            "fieldname": "section_break_budget",
-            "fieldtype": "Section Break",
-            "label": "Budget"
-        },
-        {
-            "fieldname": "material_budget",
-            "fieldtype": "Currency",
-            "label": "Material Budget",
-            "in_list_view": 1
-        },
-        {
-            "fieldname": "material_spent",
-            "fieldtype": "Currency",
-            "label": "Material Spent",
-            "read_only": 1
-        },
-        {
-            "fieldname": "column_break_budget",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "service_budget",
-            "fieldtype": "Currency",
-            "label": "Service Budget"
-        },
-        {
-            "fieldname": "service_spent",
-            "fieldtype": "Currency",
-            "label": "Service Spent",
-            "read_only": 1
-        },
-        {
-            "fieldname": "section_break_totals",
-            "fieldtype": "Section Break",
-            "label": "Totals"
-        },
-        {
-            "fieldname": "total_budget",
-            "fieldtype": "Currency",
-            "label": "Total Budget",
-            "read_only": 1,
-            "bold": 1
-        },
-        {
-            "fieldname": "total_spent",
-            "fieldtype": "Currency",
-            "label": "Total Spent",
-            "read_only": 1,
-            "bold": 1
-        },
-        {
-            "fieldname": "column_break_totals",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "overall_utilization_pct",
-            "fieldtype": "Percent",
-            "label": "Overall Utilization %",
-            "read_only": 1,
-            "bold": 1,
-            "in_list_view": 1
-        },
-        {
-            "fieldname": "section_break_remarks",
-            "fieldtype": "Section Break",
-            "label": "Remarks",
-            "collapsible": 1
-        },
-        {
-            "fieldname": "remarks",
-            "fieldtype": "Small Text",
-            "label": "Remarks"
-        }
-    ],
-    "index_web_pages_for_search": 0,
-    "links": [],
-    "modified": "2026-03-07 10:00:00.000000",
-    "modified_by": "Administrator",
-    "module": "Detox Project",
-    "name": "Sub WBS Element",
-    "naming_rule": "Random",
-    "owner": "Administrator",
-    "permissions": [
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "System Manager",
-            "share": 1,
-            "write": 1
-        },
-        {
-            "create": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "Projects Manager",
-            "share": 1,
-            "write": 1
-        },
-        {
-            "create": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "Projects User",
-            "write": 1
-        }
-    ],
-    "sort_field": "modified",
-    "sort_order": "DESC",
-    "states": [],
-    "track_changes": 1
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-03-07 10:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "sub_wbs_name",
+  "main_wbs_element",
+  "parent_sub_wbs",
+  "column_break_1",
+  "project",
+  "financial_model",
+  "category",
+  "company",
+  "status",
+  "section_break_details",
+  "site",
+  "cost_center",
+  "column_break_details",
+  "person_responsible",
+  "section_break_budget",
+  "material_budget",
+  "material_spent",
+  "column_break_budget",
+  "section_break_totals",
+  "total_budget",
+  "total_spent",
+  "column_break_totals",
+  "overall_utilization_pct",
+  "section_break_remarks",
+  "remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "sub_wbs_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Sub WBS Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "main_wbs_element",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Main WBS Element",
+   "options": "WBS Element",
+   "reqd": 1
+  },
+  {
+   "fieldname": "parent_sub_wbs",
+   "fieldtype": "Link",
+   "label": "Parent Sub WBS",
+   "options": "Sub WBS Element"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Project",
+   "options": "Project"
+  },
+  {
+   "fieldname": "financial_model",
+   "fieldtype": "Link",
+   "label": "Financial Model",
+   "options": "Financial Model",
+   "fetch_from": "main_wbs_element.financial_model"
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Link",
+   "label": "Category",
+   "options": "Project Cost Category"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Active\nOn Hold\nCompleted\nCancelled"
+  },
+  {
+   "fieldname": "section_break_details",
+   "fieldtype": "Section Break",
+   "label": "Details"
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "label": "Site"
+  },
+  {
+   "fieldname": "cost_center",
+   "fieldtype": "Link",
+   "label": "Cost Center",
+   "options": "Cost Center"
+  },
+  {
+   "fieldname": "column_break_details",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "person_responsible",
+   "fieldtype": "Link",
+   "label": "Person Responsible",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "section_break_budget",
+   "fieldtype": "Section Break",
+   "label": "Budget"
+  },
+  {
+   "fieldname": "material_budget",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Material Budget"
+  },
+  {
+   "fieldname": "material_spent",
+   "fieldtype": "Currency",
+   "label": "Material Spent",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_budget",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_totals",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "bold": 1,
+   "fieldname": "total_budget",
+   "fieldtype": "Currency",
+   "label": "Total Budget",
+   "read_only": 1
+  },
+  {
+   "bold": 1,
+   "fieldname": "total_spent",
+   "fieldtype": "Currency",
+   "label": "Total Spent",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_totals",
+   "fieldtype": "Column Break"
+  },
+  {
+   "bold": 1,
+   "fieldname": "overall_utilization_pct",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "label": "Overall Utilization %",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_remarks",
+   "fieldtype": "Section Break",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  }
+ ],
+ "links": [],
+ "modified": "2026-03-16 12:58:10.560228",
+ "modified_by": "Administrator",
+ "module": "Detox Project",
+ "name": "Sub WBS Element",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Projects Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Projects User",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
 }

@@ -1,5 +1,6 @@
 frappe.ui.form.on("Sub WBS Element", {
 	refresh(frm) {
+		set_sub_wbs_category_filter(frm);
 		if (frm.doc.total_budget) {
 			let pct = frm.doc.overall_utilization_pct || 0;
 			let color = pct > 100 ? "red" : pct > 80 ? "orange" : "green";
@@ -42,4 +43,23 @@ frappe.ui.form.on("Sub WBS Element", {
 			};
 		});
 	},
+
+	financial_model(frm) {
+		set_sub_wbs_category_filter(frm);
+		if (frm.doc.category) {
+			frm.set_value("category", "");
+		}
+	},
 });
+
+function set_sub_wbs_category_filter(frm) {
+	frm.set_query("category", () => {
+		if (frm.doc.financial_model) {
+			return {
+				query: "detox_project.detox_project.api.get_fm_categories",
+				filters: { financial_model: frm.doc.financial_model },
+			};
+		}
+		return { filters: { enabled: 1 } };
+	});
+}

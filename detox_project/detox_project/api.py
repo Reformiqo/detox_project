@@ -447,3 +447,34 @@ def _update_wbs_spent(doc):
 			sub_wbs.refresh_spent_amounts()
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "Sub WBS PO Submit Update Error")
+
+
+# ---------------------------------------------------------------------------
+# Query helpers
+# ---------------------------------------------------------------------------
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def get_fm_categories(doctype, txt, searchfield, start, page_len, filters):
+	"""Return Project Cost Categories from a Financial Model's Project Cost Breakdown."""
+	financial_model = filters.get("financial_model")
+	if not financial_model:
+		return []
+
+	return frappe.db.sql(
+		"""
+		SELECT DISTINCT pci.category, pci.category
+		FROM `tabFM Project Cost Item` pci
+		WHERE pci.parent = %(financial_model)s
+		AND pci.parenttype = 'Financial Model'
+		AND pci.category LIKE %(txt)s
+		ORDER BY pci.category
+		LIMIT %(page_len)s OFFSET %(start)s
+		""",
+		{
+			"financial_model": financial_model,
+			"txt": f"%%{txt}%%",
+			"page_len": page_len,
+			"start": start,
+		},
+	)
