@@ -25,6 +25,9 @@
   "material_spent",
   "material_utilization_pct",
   "column_break_service_budget",
+  "service_budget",
+  "service_spent",
+  "service_utilization_pct",
   "section_break_totals",
   "total_budget",
   "total_spent",
@@ -146,6 +149,23 @@
   {
    "fieldname": "column_break_service_budget",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "service_budget",
+   "fieldtype": "Currency",
+   "label": "Service Budget"
+  },
+  {
+   "fieldname": "service_spent",
+   "fieldtype": "Currency",
+   "label": "Service Spent",
+   "read_only": 1
+  },
+  {
+   "fieldname": "service_utilization_pct",
+   "fieldtype": "Percent",
+   "label": "Service Utilization %",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_totals",

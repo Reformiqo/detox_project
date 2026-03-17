@@ -23,6 +23,8 @@
   "material_budget",
   "material_spent",
   "column_break_budget",
+  "service_budget",
+  "service_spent",
   "section_break_totals",
   "total_budget",
   "total_spent",
@@ -140,6 +142,17 @@
   {
    "fieldname": "column_break_budget",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "service_budget",
+   "fieldtype": "Currency",
+   "label": "Service Budget"
+  },
+  {
+   "fieldname": "service_spent",
+   "fieldtype": "Currency",
+   "label": "Service Spent",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_totals",
