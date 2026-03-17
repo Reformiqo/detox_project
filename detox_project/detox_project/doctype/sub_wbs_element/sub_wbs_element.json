@@ -20,16 +20,10 @@
   "column_break_details",
   "person_responsible",
   "section_break_budget",
-  "material_budget",
-  "material_spent",
+  "budget_amount",
+  "budget_spent",
   "column_break_budget",
-  "service_budget",
-  "service_spent",
-  "section_break_totals",
-  "total_budget",
-  "total_spent",
-  "column_break_totals",
-  "overall_utilization_pct",
+  "budget_utilization_pct",
   "section_break_remarks",
   "remarks"
  ],
@@ -125,65 +119,33 @@
   {
    "fieldname": "section_break_budget",
    "fieldtype": "Section Break",
-   "label": "Budget"
+   "label": "Budget & Utilization"
   },
   {
-   "fieldname": "material_budget",
+   "fieldname": "budget_amount",
    "fieldtype": "Currency",
+   "label": "Budget Amount",
    "in_list_view": 1,
-   "label": "Material Budget"
+   "bold": 1
   },
   {
-   "fieldname": "material_spent",
+   "fieldname": "budget_spent",
    "fieldtype": "Currency",
-   "label": "Material Spent",
-   "read_only": 1
+   "label": "Budget Spent",
+   "read_only": 1,
+   "bold": 1
   },
   {
    "fieldname": "column_break_budget",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "service_budget",
-   "fieldtype": "Currency",
-   "label": "Service Budget"
-  },
-  {
-   "fieldname": "service_spent",
-   "fieldtype": "Currency",
-   "label": "Service Spent",
-   "read_only": 1
-  },
-  {
-   "fieldname": "section_break_totals",
-   "fieldtype": "Section Break",
-   "label": "Totals"
-  },
-  {
-   "bold": 1,
-   "fieldname": "total_budget",
-   "fieldtype": "Currency",
-   "label": "Total Budget",
-   "read_only": 1
-  },
-  {
-   "bold": 1,
-   "fieldname": "total_spent",
-   "fieldtype": "Currency",
-   "label": "Total Spent",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_totals",
-   "fieldtype": "Column Break"
-  },
-  {
-   "bold": 1,
-   "fieldname": "overall_utilization_pct",
+   "fieldname": "budget_utilization_pct",
    "fieldtype": "Percent",
+   "label": "Budget Utilization %",
    "in_list_view": 1,
-   "label": "Overall Utilization %",
-   "read_only": 1
+   "read_only": 1,
+   "bold": 1
   },
   {
    "collapsible": 1,

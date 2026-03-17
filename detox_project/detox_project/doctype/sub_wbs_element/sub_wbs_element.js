@@ -1,8 +1,8 @@
 frappe.ui.form.on("Sub WBS Element", {
 	refresh(frm) {
 		set_sub_wbs_category_filter(frm);
-		if (frm.doc.total_budget) {
-			let pct = frm.doc.overall_utilization_pct || 0;
+		if (frm.doc.budget_amount) {
+			let pct = frm.doc.budget_utilization_pct || 0;
 			let color = pct > 100 ? "red" : pct > 80 ? "orange" : "green";
 			frm.dashboard.add_indicator(__("Utilization: {0}%", [pct.toFixed(1)]), color);
 		}

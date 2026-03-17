@@ -9,24 +9,21 @@ class SubWBSElement(Document):
 		self.validate_budget_against_parent()
 
 	def calculate_totals(self):
-		self.total_budget = (self.material_budget or 0) + (self.service_budget or 0)
-		self.total_spent = (self.material_spent or 0) + (self.service_spent or 0)
-
-		if self.total_budget:
-			self.overall_utilization_pct = self.total_spent / self.total_budget * 100
+		if self.budget_amount:
+			self.budget_utilization_pct = (self.budget_spent or 0) / self.budget_amount * 100
 		else:
-			self.overall_utilization_pct = 0
+			self.budget_utilization_pct = 0
 
 	def validate_budget_against_parent(self):
 		if not self.main_wbs_element:
 			return
 
-		parent_budget = frappe.db.get_value("WBS Element", self.main_wbs_element, "total_budget") or 0
+		parent_budget = frappe.db.get_value("WBS Element", self.main_wbs_element, "budget_amount") or 0
 
 		existing_sub_budget = (
 			frappe.db.sql(
 				"""
-            SELECT COALESCE(SUM(total_budget), 0)
+            SELECT COALESCE(SUM(budget_amount), 0)
             FROM `tabSub WBS Element`
             WHERE main_wbs_element = %s
             AND name != %s
@@ -37,7 +34,7 @@ class SubWBSElement(Document):
 			or 0
 		)
 
-		total_allocated = existing_sub_budget + self.total_budget
+		total_allocated = existing_sub_budget + (self.budget_amount or 0)
 
 		if parent_budget and total_allocated > parent_budget:
 			frappe.msgprint(
@@ -56,35 +53,19 @@ class SubWBSElement(Document):
 		wbs.refresh_spent_amounts()
 
 	def refresh_spent_amounts(self):
-		material_spent = (
+		spent = (
 			frappe.db.sql(
 				"""
             SELECT COALESCE(SUM(po.grand_total), 0)
             FROM `tabPurchase Order` po
             WHERE po.custom_sub_wbs_element = %s
             AND po.docstatus = 1
-            AND po.custom_po_type = 'Material'
         """,
 				self.name,
 			)[0][0]
 			or 0
 		)
 
-		service_spent = (
-			frappe.db.sql(
-				"""
-            SELECT COALESCE(SUM(po.grand_total), 0)
-            FROM `tabPurchase Order` po
-            WHERE po.custom_sub_wbs_element = %s
-            AND po.docstatus = 1
-            AND po.custom_po_type = 'Service'
-        """,
-				self.name,
-			)[0][0]
-			or 0
-		)
-
-		self.material_spent = material_spent
-		self.service_spent = service_spent
+		self.budget_spent = spent
 		self.calculate_totals()
 		self.save(ignore_permissions=True)

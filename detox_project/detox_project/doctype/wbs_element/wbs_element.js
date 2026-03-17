@@ -1,14 +1,14 @@
 frappe.ui.form.on("WBS Element", {
 	refresh(frm) {
 		set_category_filter(frm);
-		if (frm.doc.total_budget) {
-			let pct = frm.doc.overall_utilization_pct || 0;
+		if (frm.doc.budget_amount) {
+			let pct = frm.doc.budget_utilization_pct || 0;
 			let color = pct > 100 ? "red" : pct > 80 ? "orange" : "green";
 			frm.dashboard.add_indicator(__("Budget Utilization: {0}%", [pct.toFixed(1)]), color);
 			frm.dashboard.add_indicator(
 				__("Budget: {0} | Spent: {1}", [
-					format_currency(frm.doc.total_budget),
-					format_currency(frm.doc.total_spent),
+					format_currency(frm.doc.budget_amount),
+					format_currency(frm.doc.budget_spent),
 				]),
 				"blue"
 			);
