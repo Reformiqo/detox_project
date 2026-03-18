@@ -301,10 +301,12 @@ def get_budget_utilization(project=None, wbs_element=None):
 
 @frappe.whitelist()
 def get_project_financial_summary(project):
-	wbs_data = frappe.get_all(
-		"WBS Element",
-		filters={"project": project, "status": ["!=", "Cancelled"]},
-		fields=["sum(budget_amount) as budget", "sum(budget_spent) as spent"],
+	wbs_data = frappe.db.sql(
+		"""SELECT COALESCE(SUM(budget_amount), 0) as budget,
+		          COALESCE(SUM(budget_spent), 0) as spent
+		   FROM `tabWBS Element`
+		   WHERE project = %s AND status != 'Cancelled'""",
+		project, as_dict=True,
 	)
 
 	wbs_names = frappe.get_all("WBS Element", filters={"project": project}, pluck="name") or [""]
