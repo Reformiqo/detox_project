@@ -811,14 +811,14 @@ def setup_notifications():
 			{
 				"doctype": "Notification",
 				"name": "Budget Threshold Alert",
-				"subject": "Budget Alert: {{ doc.wbs_name }} at {{ doc.overall_utilization_pct }}% utilization",
+				"subject": "Budget Alert: {{ doc.wbs_name }} at {{ doc.budget_utilization_pct }}% utilization",
 				"document_type": "WBS Element",
 				"event": "Value Change",
-				"value_changed": "overall_utilization_pct",
-				"condition": "doc.overall_utilization_pct >= 80",
+				"value_changed": "budget_utilization_pct",
+				"condition": "doc.budget_utilization_pct >= 80",
 				"channel": "Email",
 				"message": """<p>WBS Element <b>{{ doc.wbs_name }}</b> ({{ doc.name }}) has reached
-<b>{{ doc.overall_utilization_pct }}%</b> budget utilization.</p>
+<b>{{ doc.budget_utilization_pct }}%</b> budget utilization.</p>
 <p>Budget: {{ frappe.format_value(doc.total_budget, {'fieldtype': 'Currency'}) }}<br>
 Spent: {{ frappe.format_value(doc.total_spent, {'fieldtype': 'Currency'}) }}</p>
 <p>Please review and take necessary action.</p>""",

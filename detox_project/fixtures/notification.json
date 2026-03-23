@@ -3,7 +3,7 @@
   "attach_files": "",
   "attach_print": 0,
   "channel": "Email",
-  "condition": "doc.overall_utilization_pct >= 80",
+  "condition": "doc.budget_utilization_pct >= 80",
   "condition_type": "Python",
   "date_changed": null,
   "datetime_changed": null,
@@ -17,7 +17,7 @@
   "filters": null,
   "from_attach_field": null,
   "is_standard": 0,
-  "message": "<p>WBS Element <b>{{ doc.wbs_name }}</b> ({{ doc.name }}) has reached\n<b>{{ doc.overall_utilization_pct }}%</b> budget utilization.</p>\n<p>Budget: {{ frappe.format_value(doc.total_budget, {'fieldtype': 'Currency'}) }}<br>\nSpent: {{ frappe.format_value(doc.total_spent, {'fieldtype': 'Currency'}) }}</p>\n<p>Please review and take necessary action.</p>",
+  "message": "<p>WBS Element <b>{{ doc.wbs_name }}</b> ({{ doc.name }}) has reached\n<b>{{ doc.budget_utilization_pct }}%</b> budget utilization.</p>\n<p>Budget: {{ frappe.format_value(doc.budget_amount, {'fieldtype': 'Currency'}) }}<br>\nSpent: {{ frappe.format_value(doc.budget_spent, {'fieldtype': 'Currency'}) }}</p>\n<p>Please review and take necessary action.</p>",
   "message_type": "Markdown",
   "method": null,
   "minutes_offset": 0,
@@ -41,7 +41,7 @@
   "sender_email": null,
   "set_property_after_alert": null,
   "slack_webhook_url": null,
-  "subject": "Budget Alert: {{ doc.wbs_name }} at {{ doc.overall_utilization_pct }}% utilization",
-  "value_changed": "overall_utilization_pct"
+  "subject": "Budget Alert: {{ doc.wbs_name }} at {{ doc.budget_utilization_pct }}% utilization",
+  "value_changed": "budget_utilization_pct"
  }
 ]
