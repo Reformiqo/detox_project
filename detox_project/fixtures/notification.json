@@ -1,0 +1,47 @@
+[
+ {
+  "attach_files": "",
+  "attach_print": 0,
+  "channel": "Email",
+  "condition": "doc.overall_utilization_pct >= 80",
+  "condition_type": "Python",
+  "date_changed": null,
+  "datetime_changed": null,
+  "datetime_last_run": null,
+  "days_in_advance": 0,
+  "docstatus": 0,
+  "doctype": "Notification",
+  "document_type": "WBS Element",
+  "enabled": 1,
+  "event": "Value Change",
+  "filters": null,
+  "from_attach_field": null,
+  "is_standard": 0,
+  "message": "<p>WBS Element <b>{{ doc.wbs_name }}</b> ({{ doc.name }}) has reached\n<b>{{ doc.overall_utilization_pct }}%</b> budget utilization.</p>\n<p>Budget: {{ frappe.format_value(doc.total_budget, {'fieldtype': 'Currency'}) }}<br>\nSpent: {{ frappe.format_value(doc.total_spent, {'fieldtype': 'Currency'}) }}</p>\n<p>Please review and take necessary action.</p>",
+  "message_type": "Markdown",
+  "method": null,
+  "minutes_offset": 0,
+  "modified": "2026-03-09 12:34:02.838579",
+  "module": "Detox Project",
+  "name": "Budget Threshold Alert",
+  "print_format": null,
+  "property_value": null,
+  "recipients": [
+   {
+    "bcc": null,
+    "cc": null,
+    "condition": null,
+    "receiver_by_document_field": null,
+    "receiver_by_role": "Projects Manager"
+   }
+  ],
+  "send_system_notification": 0,
+  "send_to_all_assignees": 0,
+  "sender": null,
+  "sender_email": null,
+  "set_property_after_alert": null,
+  "slack_webhook_url": null,
+  "subject": "Budget Alert: {{ doc.wbs_name }} at {{ doc.overall_utilization_pct }}% utilization",
+  "value_changed": "overall_utilization_pct"
+ }
+]
