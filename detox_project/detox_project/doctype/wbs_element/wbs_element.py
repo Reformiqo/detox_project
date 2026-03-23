@@ -1,11 +1,13 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt
 
 
 class WBSElement(Document):
 	def validate(self):
 		self.calculate_totals()
+		self.validate_category_budget()
 
 	def on_update(self):
 		self.update_project_budget_summary()
@@ -19,6 +21,45 @@ class WBSElement(Document):
 	def update_utilization(self):
 		self.calculate_totals()
 		self.save(ignore_permissions=True)
+
+	def validate_category_budget(self):
+		if not self.financial_model or not self.category or not self.budget_amount:
+			return
+		fm_allocation = (
+			frappe.db.sql(
+				"""
+				SELECT COALESCE(SUM(amount), 0)
+				FROM `tabFM Project Cost Item`
+				WHERE parent = %s AND category = %s
+				""",
+				(self.financial_model, self.category),
+			)[0][0]
+			or 0
+		)
+		if not fm_allocation:
+			return
+		existing = (
+			frappe.db.sql(
+				"""
+				SELECT COALESCE(SUM(budget_amount), 0)
+				FROM `tabWBS Element`
+				WHERE financial_model = %s AND category = %s AND name != %s AND status != 'Cancelled'
+				""",
+				(self.financial_model, self.category, self.name or ""),
+			)[0][0]
+			or 0
+		)
+		total = existing + (self.budget_amount or 0)
+		if total > fm_allocation:
+			frappe.throw(
+				_(
+					"Total WBS budget for Category [{0}] is {1}. Exceeds FM allocation of {2}."
+				).format(
+					self.category,
+					frappe.format_value(total, {"fieldtype": "Currency"}),
+					frappe.format_value(fm_allocation, {"fieldtype": "Currency"}),
+				)
+			)
 
 	def update_project_budget_summary(self):
 		if not self.project:
@@ -49,21 +90,40 @@ class WBSElement(Document):
 			)
 
 	def refresh_spent_amounts(self):
-		"""Recalculate spent amounts from linked POs."""
+		"""Recalculate spent from WBS Allocation table on submitted POs."""
 		spent = (
 			frappe.db.sql(
 				"""
-            SELECT COALESCE(SUM(po.grand_total), 0)
-            FROM `tabPurchase Order` po
-            WHERE po.custom_wbs_element = %s
-            AND po.docstatus = 1
-        """,
+				SELECT COALESCE(SUM(wa.allocated_amount), 0)
+				FROM `tabWBS Allocation` wa
+				INNER JOIN `tabPurchase Order` po ON po.name = wa.parent
+				WHERE wa.parenttype = 'Purchase Order'
+				AND wa.wbs_element = %s
+				AND po.docstatus = 1
+				""",
 				self.name,
 			)[0][0]
 			or 0
 		)
 
-		self.budget_spent = spent
+		# Also count old-style POs for backward compatibility
+		old_spent = (
+			frappe.db.sql(
+				"""
+				SELECT COALESCE(SUM(grand_total), 0)
+				FROM `tabPurchase Order`
+				WHERE custom_wbs_element = %s AND docstatus = 1
+				AND name NOT IN (
+					SELECT DISTINCT parent FROM `tabWBS Allocation`
+					WHERE parenttype = 'Purchase Order' AND wbs_element = %s
+				)
+				""",
+				(self.name, self.name),
+			)[0][0]
+			or 0
+		)
+
+		self.budget_spent = spent + old_spent
 		self.calculate_totals()
 		self.save(ignore_permissions=True)
 		self.update_project_budget_summary()

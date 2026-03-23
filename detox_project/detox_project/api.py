@@ -56,94 +56,45 @@ def on_project_update(doc, method):
 
 
 def validate_material_request_budget(doc, method):
-	"""HARD block: MR amount must not exceed WBS remaining budget."""
-	if not doc.custom_wbs_element:
-		return
-
-	wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
-	if not wbs.budget_amount:
-		return
-
-	mr_total = sum(flt(item.amount) for item in doc.items)
-	budget = flt(wbs.budget_amount)
-	spent = flt(wbs.budget_spent)
-	remaining = budget - spent
-
-	# HARD BLOCK if MR exceeds remaining budget
-	if mr_total > remaining and budget > 0:
-		frappe.throw(
-			_(
-				"BUDGET EXCEEDED: This Request ({0}) exceeds remaining WBS '{1}' "
-				"budget of {2}.\n\n"
-				"Budget: {3} | Already Spent: {4} | Remaining: {2}\n\n"
-				"Please revise the request amount or get a budget increase approved."
-			).format(
-				frappe.format_value(mr_total, {"fieldtype": "Currency"}),
-				wbs.wbs_name,
-				frappe.format_value(remaining, {"fieldtype": "Currency"}),
-				frappe.format_value(budget, {"fieldtype": "Currency"}),
-				frappe.format_value(spent, {"fieldtype": "Currency"}),
-			),
-			title=_("Budget Limit Exceeded"),
+	"""Soft warning per WBS allocation row if budget nearing limit."""
+	if not doc.get("custom_wbs_allocations"):
+		# Backward compat: check old field
+		if not doc.custom_wbs_element:
+			return
+		_validate_single_wbs_budget(
+			doc, doc.custom_wbs_element,
+			sum(flt(item.amount) for item in doc.items),
+			warn_only=True,
 		)
+		return
 
-	# Warning at 80% (still allows save)
-	new_total = spent + mr_total
-	if budget > 0:
-		new_pct = new_total / budget * 100
-		if new_pct >= 80 and mr_total <= remaining:
-			frappe.msgprint(
-				_("This Request will bring WBS '{0}' budget to {1}% utilization.").format(
-					wbs.wbs_name, f"{new_pct:.1f}"
-				),
-				indicator="orange",
-				title=_("Budget Warning"),
-			)
+	for row in doc.custom_wbs_allocations:
+		if not row.wbs_element:
+			continue
+		_validate_single_wbs_budget(
+			doc, row.wbs_element, flt(row.allocated_amount),
+			warn_only=True, row_label=row.wbs_element,
+		)
 
 
 def validate_po_budget(doc, method):
-	"""HARD block: PO amount must not exceed WBS remaining budget."""
-	if not doc.custom_wbs_element:
-		return
-
-	wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
-	if not wbs.budget_amount:
-		return
-
-	po_total = flt(doc.grand_total)
-	budget = flt(wbs.budget_amount)
-	spent = flt(wbs.budget_spent)
-	remaining = budget - spent
-
-	if po_total > remaining and budget > 0:
-		frappe.throw(
-			_(
-				"BUDGET EXCEEDED: This PO ({0}) exceeds remaining WBS '{1}' "
-				"budget of {2}.\n\n"
-				"Budget: {3} | Already Spent: {4} | Remaining: {2}\n\n"
-				"Please revise the PO amount or request a budget increase."
-			).format(
-				frappe.format_value(po_total, {"fieldtype": "Currency"}),
-				wbs.wbs_name,
-				frappe.format_value(remaining, {"fieldtype": "Currency"}),
-				frappe.format_value(budget, {"fieldtype": "Currency"}),
-				frappe.format_value(spent, {"fieldtype": "Currency"}),
-			),
-			title=_("Budget Limit Exceeded"),
+	"""Hard block per WBS allocation row if budget exceeded."""
+	if not doc.get("custom_wbs_allocations"):
+		if not doc.custom_wbs_element:
+			return
+		_validate_single_wbs_budget(
+			doc, doc.custom_wbs_element, flt(doc.grand_total),
+			warn_only=False,
 		)
+		return
 
-	# Warning at 80%
-	new_total = spent + po_total
-	if budget > 0:
-		new_pct = new_total / budget * 100
-		if new_pct >= 80 and po_total <= remaining:
-			frappe.msgprint(
-				_("This PO will bring WBS '{0}' budget to {1}% utilization.").format(
-					wbs.wbs_name, f"{new_pct:.1f}"
-				),
-				indicator="orange",
-				title=_("Budget Warning"),
-			)
+	for row in doc.custom_wbs_allocations:
+		if not row.wbs_element:
+			continue
+		_validate_single_wbs_budget(
+			doc, row.wbs_element, flt(row.allocated_amount),
+			warn_only=False, row_label=row.wbs_element,
+		)
 
 
 def on_po_submit(doc, method):
@@ -151,13 +102,11 @@ def on_po_submit(doc, method):
 
 
 def on_pi_submit(doc, method):
-	if not doc.custom_wbs_element:
-		return
-	try:
-		wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
-		wbs.refresh_spent_amounts()
-	except Exception:
-		frappe.log_error(frappe.get_traceback(), "WBS PI Submit Update Error")
+	_update_wbs_spent(doc)
+
+
+def on_pr_submit(doc, method):
+	_update_wbs_spent(doc)
 
 
 # ---------------------------------------------------------------------------
@@ -311,22 +260,27 @@ def get_project_financial_summary(project):
 
 	wbs_names = frappe.get_all("WBS Element", filters={"project": project}, pluck="name") or [""]
 
-	mr_count = frappe.db.count(
-		"Material Request",
-		{
-			"custom_wbs_element": ["in", wbs_names],
-			"docstatus": ["<", 2],
-		},
-	)
+	mr_count = 0
+	if wbs_names != [""]:
+		mr_count = frappe.db.sql(
+			"""
+			SELECT COUNT(DISTINCT wa.parent) FROM `tabWBS Allocation` wa
+			WHERE wa.parenttype = 'Material Request' AND wa.wbs_element IN %s
+			""",
+			[wbs_names],
+		)[0][0] or 0
 
 	po_data = frappe.db.sql(
 		"""
-        SELECT COUNT(*) as count, COALESCE(SUM(grand_total), 0) as total
-        FROM `tabPurchase Order`
-        WHERE custom_wbs_element IN (
-            SELECT name FROM `tabWBS Element` WHERE project = %s
-        ) AND docstatus = 1
-    """,
+		SELECT COUNT(DISTINCT wa.parent) as count,
+		       COALESCE(SUM(wa.allocated_amount), 0) as total
+		FROM `tabWBS Allocation` wa
+		INNER JOIN `tabPurchase Order` po ON po.name = wa.parent
+		WHERE wa.parenttype = 'Purchase Order'
+		AND wa.wbs_element IN (
+			SELECT name FROM `tabWBS Element` WHERE project = %s
+		) AND po.docstatus = 1
+		""",
 		project,
 		as_dict=True,
 	)[0]
@@ -406,19 +360,67 @@ def send_budget_alerts():
 
 
 def _update_wbs_spent(doc):
-	if doc.custom_wbs_element:
-		try:
-			wbs = frappe.get_doc("WBS Element", doc.custom_wbs_element)
-			wbs.refresh_spent_amounts()
-		except Exception:
-			frappe.log_error(frappe.get_traceback(), "WBS PO Submit Update Error")
+	wbs_set = set()
+	sub_wbs_set = set()
 
-	if doc.custom_sub_wbs_element:
+	if doc.get("custom_wbs_allocations"):
+		for row in doc.custom_wbs_allocations:
+			if row.wbs_element:
+				wbs_set.add(row.wbs_element)
+			if row.sub_wbs_element:
+				sub_wbs_set.add(row.sub_wbs_element)
+	else:
+		# Backward compat
+		if doc.get("custom_wbs_element"):
+			wbs_set.add(doc.custom_wbs_element)
+		if doc.get("custom_sub_wbs_element"):
+			sub_wbs_set.add(doc.custom_sub_wbs_element)
+
+	for wbs_name in wbs_set:
 		try:
-			sub_wbs = frappe.get_doc("Sub WBS Element", doc.custom_sub_wbs_element)
-			sub_wbs.refresh_spent_amounts()
+			frappe.get_doc("WBS Element", wbs_name).refresh_spent_amounts()
 		except Exception:
-			frappe.log_error(frappe.get_traceback(), "Sub WBS PO Submit Update Error")
+			frappe.log_error(frappe.get_traceback(), f"WBS Spent Update Error: {wbs_name}")
+
+	for sub_wbs_name in sub_wbs_set:
+		try:
+			frappe.get_doc("Sub WBS Element", sub_wbs_name).refresh_spent_amounts()
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Sub WBS Spent Update Error: {sub_wbs_name}")
+
+
+def _validate_single_wbs_budget(doc, wbs_name, amount, warn_only=False, row_label=""):
+	wbs = frappe.get_doc("WBS Element", wbs_name)
+	if not wbs.budget_amount:
+		return
+	budget = flt(wbs.budget_amount)
+	spent = flt(wbs.budget_spent)
+	remaining = budget - spent
+
+	if amount > remaining and budget > 0:
+		msg = _(
+			"WBS [{0}]: Amount {1} exceeds remaining budget {2}. "
+			"Budget: {3} | Spent: {4}"
+		).format(
+			wbs.wbs_name,
+			frappe.format_value(amount, {"fieldtype": "Currency"}),
+			frappe.format_value(remaining, {"fieldtype": "Currency"}),
+			frappe.format_value(budget, {"fieldtype": "Currency"}),
+			frappe.format_value(spent, {"fieldtype": "Currency"}),
+		)
+		if warn_only:
+			frappe.msgprint(msg, indicator="red", title=_("Budget Exceeded"))
+		else:
+			frappe.throw(msg, title=_("Budget Limit Exceeded"))
+		return
+
+	new_pct = (spent + amount) / budget * 100 if budget else 0
+	if new_pct >= 80:
+		frappe.msgprint(
+			_("WBS [{0}]: Utilization will reach {1}%").format(wbs.wbs_name, f"{new_pct:.1f}"),
+			indicator="orange",
+			title=_("Budget Warning"),
+		)
 
 
 # ---------------------------------------------------------------------------

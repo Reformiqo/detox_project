@@ -23,12 +23,12 @@ class SubWBSElement(Document):
 		existing_sub_budget = (
 			frappe.db.sql(
 				"""
-            SELECT COALESCE(SUM(budget_amount), 0)
-            FROM `tabSub WBS Element`
-            WHERE main_wbs_element = %s
-            AND name != %s
-            AND status != 'Cancelled'
-        """,
+				SELECT COALESCE(SUM(budget_amount), 0)
+				FROM `tabSub WBS Element`
+				WHERE main_wbs_element = %s
+				AND name != %s
+				AND status != 'Cancelled'
+				""",
 				(self.main_wbs_element, self.name or ""),
 			)[0][0]
 			or 0
@@ -37,13 +37,12 @@ class SubWBSElement(Document):
 		total_allocated = existing_sub_budget + (self.budget_amount or 0)
 
 		if parent_budget and total_allocated > parent_budget:
-			frappe.msgprint(
+			frappe.throw(
 				_("Total Sub WBS budget ({0}) exceeds parent WBS budget ({1})").format(
 					frappe.format_value(total_allocated, {"fieldtype": "Currency"}),
 					frappe.format_value(parent_budget, {"fieldtype": "Currency"}),
 				),
-				indicator="orange",
-				title=_("Budget Warning"),
+				title=_("Budget Limit Exceeded"),
 			)
 
 	def update_parent_wbs(self):
@@ -56,16 +55,35 @@ class SubWBSElement(Document):
 		spent = (
 			frappe.db.sql(
 				"""
-            SELECT COALESCE(SUM(po.grand_total), 0)
-            FROM `tabPurchase Order` po
-            WHERE po.custom_sub_wbs_element = %s
-            AND po.docstatus = 1
-        """,
+				SELECT COALESCE(SUM(wa.allocated_amount), 0)
+				FROM `tabWBS Allocation` wa
+				INNER JOIN `tabPurchase Order` po ON po.name = wa.parent
+				WHERE wa.parenttype = 'Purchase Order'
+				AND wa.sub_wbs_element = %s
+				AND po.docstatus = 1
+				""",
 				self.name,
 			)[0][0]
 			or 0
 		)
 
-		self.budget_spent = spent
+		# Also count old-style POs for backward compatibility
+		old_spent = (
+			frappe.db.sql(
+				"""
+				SELECT COALESCE(SUM(grand_total), 0)
+				FROM `tabPurchase Order`
+				WHERE custom_sub_wbs_element = %s AND docstatus = 1
+				AND name NOT IN (
+					SELECT DISTINCT parent FROM `tabWBS Allocation`
+					WHERE parenttype = 'Purchase Order' AND sub_wbs_element = %s
+				)
+				""",
+				(self.name, self.name),
+			)[0][0]
+			or 0
+		)
+
+		self.budget_spent = spent + old_spent
 		self.calculate_totals()
 		self.save(ignore_permissions=True)

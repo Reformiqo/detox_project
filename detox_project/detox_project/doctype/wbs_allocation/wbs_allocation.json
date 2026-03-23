@@ -1,0 +1,106 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-03-23 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "wbs_element",
+  "sub_wbs_element",
+  "allocated_amount",
+  "column_break_1",
+  "wbs_type",
+  "wbs_budget",
+  "wbs_spent",
+  "wbs_utilization",
+  "section_break_remarks",
+  "remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "wbs_element",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "WBS Element",
+   "options": "WBS Element",
+   "reqd": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "sub_wbs_element",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sub WBS Element",
+   "options": "Sub WBS Element",
+   "columns": 2
+  },
+  {
+   "fieldname": "allocated_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Allocated Amount",
+   "reqd": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "wbs_element.wbs_type",
+   "fieldname": "wbs_type",
+   "fieldtype": "Data",
+   "label": "WBS Type",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "wbs_element.budget_amount",
+   "fieldname": "wbs_budget",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "WBS Budget",
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fetch_from": "wbs_element.budget_spent",
+   "fieldname": "wbs_spent",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "WBS Spent",
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fetch_from": "wbs_element.budget_utilization_pct",
+   "fieldname": "wbs_utilization",
+   "fieldtype": "Percent",
+   "label": "WBS Utilization %",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_remarks",
+   "fieldtype": "Section Break",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-03-23 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Detox Project",
+ "name": "WBS Allocation",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

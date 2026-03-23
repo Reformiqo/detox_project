@@ -26,6 +26,8 @@ doctype_js = {
 	"Project": "public/js/project_custom.js",
 	"Material Request": "public/js/material_request_custom.js",
 	"Purchase Order": "public/js/purchase_order_custom.js",
+	"Purchase Invoice": "public/js/purchase_invoice_custom.js",
+	"Purchase Receipt": "public/js/purchase_receipt_custom.js",
 }
 
 # --------------------------------------------------------------------------
@@ -50,6 +52,9 @@ doc_events = {
 	},
 	"Purchase Invoice": {
 		"on_submit": "detox_project.detox_project.api.on_pi_submit",
+	},
+	"Purchase Receipt": {
+		"on_submit": "detox_project.detox_project.api.on_pr_submit",
 	},
 	"Tender Management": {
 		"on_update": "detox_project.events.tender.on_update",
