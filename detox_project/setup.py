@@ -15,6 +15,7 @@ def after_migrate():
 	create_project_types()
 	patch_fm_wbs_fields_to_link()
 	migrate_wbs_allocations()
+	fix_budget_notification()
 
 
 def create_custom_fields():
@@ -933,3 +934,37 @@ def migrate_wbs_allocations():
 
 		if docs:
 			frappe.db.commit()
+
+
+def fix_budget_notification():
+	"""Fix Budget Threshold Alert notification to use renamed field names."""
+	if not frappe.db.exists("Notification", "Budget Threshold Alert"):
+		return
+
+	old_fields = {
+		"overall_utilization_pct": "budget_utilization_pct",
+		"total_budget": "budget_amount",
+		"total_spent": "budget_spent",
+	}
+
+	n = frappe.get_doc("Notification", "Budget Threshold Alert")
+	changed = False
+
+	for old, new in old_fields.items():
+		if old in (n.condition or ""):
+			n.condition = n.condition.replace(old, new)
+			changed = True
+		if old in (n.subject or ""):
+			n.subject = n.subject.replace(old, new)
+			changed = True
+		if old in (n.message or ""):
+			n.message = n.message.replace(old, new)
+			changed = True
+		if n.value_changed == old:
+			n.value_changed = new
+			changed = True
+
+	if changed:
+		n.flags.ignore_permissions = True
+		n.save()
+		frappe.db.commit()
