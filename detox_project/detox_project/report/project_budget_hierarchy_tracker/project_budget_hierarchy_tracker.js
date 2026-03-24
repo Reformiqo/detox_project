@@ -48,6 +48,15 @@ frappe.query_reports["Project Budget Hierarchy Tracker"] = {
 	],
 
 	formatter: function (value, row, column, data, default_formatter) {
+		// For doc link columns, return raw HTML (already has <a> tags)
+		if (
+			["mr_docs", "po_docs", "pr_docs", "pi_docs"].includes(column.fieldname) &&
+			value &&
+			value.includes("<a ")
+		) {
+			return value;
+		}
+
 		value = default_formatter(value, row, column, data);
 
 		if (!data) return value;
@@ -77,18 +86,8 @@ frappe.query_reports["Project Budget Hierarchy Tracker"] = {
 					value = `<a href="/app/sub-wbs-element/${data.entity_link}" style="color:#117a8b">${value}</a>`;
 				}
 			} else if (data.entity_link) {
-				// WBS Element
 				value = `<a href="/app/wbs-element/${data.entity_link}" style="font-weight:bold;color:#155724">${value}</a>`;
 			}
-		}
-
-		// Make counts clickable
-		if (
-			["mr_count", "po_count", "pr_count", "pi_count"].includes(column.fieldname) &&
-			value &&
-			parseInt(value) > 0
-		) {
-			value = `<span style="color:#007bff;cursor:pointer">${value}</span>`;
 		}
 
 		return value;
