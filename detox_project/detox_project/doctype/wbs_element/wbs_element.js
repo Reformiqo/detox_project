@@ -19,11 +19,12 @@ frappe.ui.form.on("WBS Element", {
 				__("Material Request"),
 				() => {
 					frappe.new_doc("Material Request", {
-						custom_wbs_element: frm.doc.name,
 						project: frm.doc.project,
 						company: frm.doc.company,
 						custom_request_type: "Material",
 					});
+					// Pre-populate WBS allocation after route
+					frappe.route_options = { _wbs_element: frm.doc.name };
 				},
 				__("Create")
 			);
@@ -32,11 +33,23 @@ frappe.ui.form.on("WBS Element", {
 				__("Service Request"),
 				() => {
 					frappe.new_doc("Material Request", {
-						custom_wbs_element: frm.doc.name,
 						project: frm.doc.project,
 						company: frm.doc.company,
 						custom_request_type: "Service",
 					});
+					frappe.route_options = { _wbs_element: frm.doc.name };
+				},
+				__("Create")
+			);
+
+			frm.add_custom_button(
+				__("Purchase Order"),
+				() => {
+					frappe.new_doc("Purchase Order", {
+						project: frm.doc.project,
+						company: frm.doc.company,
+					});
+					frappe.route_options = { _wbs_element: frm.doc.name };
 				},
 				__("Create")
 			);

@@ -14,6 +14,17 @@ frappe.ui.form.on("Purchase Order", {
 			return { filters };
 		});
 
+		// Auto-add WBS allocation row when created from WBS Element
+		if (frm.is_new() && frappe.route_options && frappe.route_options._wbs_element) {
+			let wbs = frappe.route_options._wbs_element;
+			delete frappe.route_options._wbs_element;
+			if (!frm.doc.custom_wbs_allocations || frm.doc.custom_wbs_allocations.length === 0) {
+				let row = frm.add_child("custom_wbs_allocations");
+				frappe.model.set_value(row.doctype, row.name, "wbs_element", wbs);
+				frm.refresh_field("custom_wbs_allocations");
+			}
+		}
+
 		// Old single-field queries (backward compat, fields are hidden)
 		frm.set_query("custom_wbs_element", () => {
 			let filters = { status: "Active" };
@@ -26,19 +37,6 @@ frappe.ui.form.on("Purchase Order", {
 			if (frm.doc.custom_wbs_element) filters.main_wbs_element = frm.doc.custom_wbs_element;
 			return { filters };
 		});
-	},
-
-	custom_wbs_element(frm) {
-		if (frm.doc.custom_wbs_element) {
-			frappe.db
-				.get_value("WBS Element", frm.doc.custom_wbs_element, ["project", "company"])
-				.then((r) => {
-					if (r.message && r.message.project && !frm.doc.project) {
-						frm.set_value("project", r.message.project);
-					}
-				});
-		}
-		frm.set_value("custom_sub_wbs_element", "");
 	},
 });
 
