@@ -16,6 +16,7 @@ def after_migrate():
 	patch_fm_wbs_fields_to_link()
 	migrate_wbs_allocations()
 	fix_budget_notification()
+	cleanup_old_wbs_fields()
 
 
 def create_custom_fields():
@@ -449,250 +450,44 @@ def create_custom_fields():
 			),
 		],
 		# ═══════════════════════════════════════════════════════════════════
-		# MATERIAL REQUEST — WBS Element + Project fields
+		# MATERIAL REQUEST — WBS Allocations
 		# ═══════════════════════════════════════════════════════════════════
 		"Material Request": [
-			dict(
-				fieldname="custom_wbs_section",
-				fieldtype="Section Break",
-				label="WBS / Project",
-				insert_after="schedule_date",
-			),
-			dict(
-				fieldname="custom_wbs_element",
-				fieldtype="Link",
-				label="WBS Element",
-				options="WBS Element",
-				insert_after="custom_wbs_section",
-				hidden=1,
-				read_only=1,
-			),
-			dict(
-				fieldname="custom_sub_wbs_element",
-				fieldtype="Link",
-				label="Sub WBS Element",
-				options="Sub WBS Element",
-				insert_after="custom_wbs_element",
-				hidden=1,
-				read_only=1,
-			),
-			dict(
-				fieldname="custom_request_type",
-				fieldtype="Select",
-				label="Request Type",
-				options="\nMaterial\nService",
-				insert_after="custom_sub_wbs_element",
-			),
-			dict(
-				fieldname="custom_column_break_wbs_mr",
-				fieldtype="Column Break",
-				insert_after="custom_request_type",
-			),
-			dict(
-				fieldname="custom_project_approver",
-				fieldtype="Link",
-				label="Project Approver",
-				options="User",
-				insert_after="custom_column_break_wbs_mr",
-			),
-			dict(
-				fieldname="custom_project_site",
-				fieldtype="Data",
-				label="Project Site",
-				insert_after="custom_project_approver",
-			),
-			dict(
-				fieldname="custom_wbs_allocations_section",
-				fieldtype="Section Break",
-				label="WBS Allocations",
-				insert_after="custom_project_site",
-			),
-			dict(
-				fieldname="custom_wbs_allocations",
-				fieldtype="Table",
-				label="WBS Allocations",
-				options="WBS Allocation",
-				insert_after="custom_wbs_allocations_section",
-			),
+			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
+				label="WBS Allocations", insert_after="schedule_date"),
+			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
+				label="WBS Allocations", options="WBS Allocation",
+				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
-		# MATERIAL REQUEST ITEM — WBS at item level
-		# ═══════════════════════════════════════════════════════════════════
-		"Material Request Item": [
-			dict(
-				fieldname="custom_wbs_element",
-				fieldtype="Link",
-				label="WBS Element",
-				options="WBS Element",
-				insert_after="project",
-				hidden=1,
-				read_only=1,
-			),
-			dict(
-				fieldname="custom_sub_wbs_element",
-				fieldtype="Link",
-				label="Sub WBS Element",
-				options="Sub WBS Element",
-				insert_after="custom_wbs_element",
-				hidden=1,
-				read_only=1,
-			),
-		],
-		# ═══════════════════════════════════════════════════════════════════
-		# PURCHASE ORDER — WBS fields
+		# PURCHASE ORDER — WBS Allocations
 		# ═══════════════════════════════════════════════════════════════════
 		"Purchase Order": [
-			dict(
-				fieldname="custom_wbs_section",
-				fieldtype="Section Break",
-				label="WBS / Project",
-				insert_after="project",
-			),
-			dict(
-				fieldname="custom_wbs_element",
-				fieldtype="Link",
-				label="WBS Element",
-				options="WBS Element",
-				insert_after="custom_wbs_section",
-				hidden=1,
-				read_only=1,
-			),
-			dict(
-				fieldname="custom_sub_wbs_element",
-				fieldtype="Link",
-				label="Sub WBS Element",
-				options="Sub WBS Element",
-				insert_after="custom_wbs_element",
-				hidden=1,
-				read_only=1,
-			),
-			dict(
-				fieldname="custom_po_type",
-				fieldtype="Select",
-				label="PO Type",
-				options="\nMaterial\nService",
-				insert_after="custom_sub_wbs_element",
-			),
-			dict(
-				fieldname="custom_wbs_allocations_section",
-				fieldtype="Section Break",
-				label="WBS Allocations",
-				insert_after="custom_po_type",
-			),
-			dict(
-				fieldname="custom_wbs_allocations",
-				fieldtype="Table",
-				label="WBS Allocations",
-				options="WBS Allocation",
-				insert_after="custom_wbs_allocations_section",
-			),
+			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
+				label="WBS Allocations", insert_after="project"),
+			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
+				label="WBS Allocations", options="WBS Allocation",
+				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
-		# PURCHASE ORDER ITEM — WBS at item level
-		# ═══════════════════════════════════════════════════════════════════
-		"Purchase Order Item": [
-			dict(
-				fieldname="custom_wbs_element",
-				fieldtype="Link",
-				label="WBS Element",
-				options="WBS Element",
-				insert_after="project",
-				hidden=1,
-				read_only=1,
-			),
-			dict(
-				fieldname="custom_sub_wbs_element",
-				fieldtype="Link",
-				label="Sub WBS Element",
-				options="Sub WBS Element",
-				insert_after="custom_wbs_element",
-				hidden=1,
-				read_only=1,
-			),
-		],
-		# ═══════════════════════════════════════════════════════════════════
-		# PURCHASE INVOICE — WBS fields
+		# PURCHASE INVOICE — WBS Allocations
 		# ═══════════════════════════════════════════════════════════════════
 		"Purchase Invoice": [
-			dict(
-				fieldname="custom_wbs_section",
-				fieldtype="Section Break",
-				label="WBS / Project",
-				insert_after="project",
-			),
-			dict(
-				fieldname="custom_wbs_element",
-				fieldtype="Link",
-				label="WBS Element",
-				options="WBS Element",
-				insert_after="custom_wbs_section",
-				hidden=1,
-				read_only=1,
-			),
-			dict(
-				fieldname="custom_sub_wbs_element",
-				fieldtype="Link",
-				label="Sub WBS Element",
-				options="Sub WBS Element",
-				insert_after="custom_wbs_element",
-				hidden=1,
-				read_only=1,
-			),
-			dict(
-				fieldname="custom_wbs_allocations_section",
-				fieldtype="Section Break",
-				label="WBS Allocations",
-				insert_after="custom_sub_wbs_element",
-			),
-			dict(
-				fieldname="custom_wbs_allocations",
-				fieldtype="Table",
-				label="WBS Allocations",
-				options="WBS Allocation",
-				insert_after="custom_wbs_allocations_section",
-			),
+			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
+				label="WBS Allocations", insert_after="project"),
+			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
+				label="WBS Allocations", options="WBS Allocation",
+				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
-		# PURCHASE RECEIPT — WBS fields
+		# PURCHASE RECEIPT — WBS Allocations
 		# ═══════════════════════════════════════════════════════════════════
 		"Purchase Receipt": [
-			dict(
-				fieldname="custom_wbs_section",
-				fieldtype="Section Break",
-				label="WBS / Project",
-				insert_after="project",
-			),
-			dict(
-				fieldname="custom_wbs_element",
-				fieldtype="Link",
-				label="WBS Element",
-				options="WBS Element",
-				insert_after="custom_wbs_section",
-				hidden=1,
-				read_only=1,
-			),
-			dict(
-				fieldname="custom_sub_wbs_element",
-				fieldtype="Link",
-				label="Sub WBS Element",
-				options="Sub WBS Element",
-				insert_after="custom_wbs_element",
-				hidden=1,
-				read_only=1,
-			),
-			dict(
-				fieldname="custom_wbs_allocations_section",
-				fieldtype="Section Break",
-				label="WBS Allocations",
-				insert_after="custom_sub_wbs_element",
-			),
-			dict(
-				fieldname="custom_wbs_allocations",
-				fieldtype="Table",
-				label="WBS Allocations",
-				options="WBS Allocation",
-				insert_after="custom_wbs_allocations_section",
-			),
+			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
+				label="WBS Allocations", insert_after="project"),
+			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
+				label="WBS Allocations", options="WBS Allocation",
+				insert_after="custom_wbs_allocations_section"),
 		],
 	}
 
@@ -968,3 +763,46 @@ def fix_budget_notification():
 		n.flags.ignore_permissions = True
 		n.save()
 		frappe.db.commit()
+
+
+def cleanup_old_wbs_fields():
+	"""Remove old single WBS Element/Sub WBS Element custom fields from MR/PO/PI/PR.
+
+	These were replaced by the WBS Allocations child table.
+	"""
+	old_fields = [
+		# MR
+		("Material Request", "custom_wbs_section"),
+		("Material Request", "custom_wbs_element"),
+		("Material Request", "custom_sub_wbs_element"),
+		("Material Request", "custom_request_type"),
+		("Material Request", "custom_column_break_wbs_mr"),
+		("Material Request", "custom_project_approver"),
+		("Material Request", "custom_project_site"),
+		# MR Item
+		("Material Request Item", "custom_wbs_element"),
+		("Material Request Item", "custom_sub_wbs_element"),
+		# PO
+		("Purchase Order", "custom_wbs_section"),
+		("Purchase Order", "custom_wbs_element"),
+		("Purchase Order", "custom_sub_wbs_element"),
+		("Purchase Order", "custom_po_type"),
+		# PO Item
+		("Purchase Order Item", "custom_wbs_element"),
+		("Purchase Order Item", "custom_sub_wbs_element"),
+		# PI
+		("Purchase Invoice", "custom_wbs_section"),
+		("Purchase Invoice", "custom_wbs_element"),
+		("Purchase Invoice", "custom_sub_wbs_element"),
+		# PR
+		("Purchase Receipt", "custom_wbs_section"),
+		("Purchase Receipt", "custom_wbs_element"),
+		("Purchase Receipt", "custom_sub_wbs_element"),
+	]
+
+	for dt, fieldname in old_fields:
+		cf_name = f"{dt}-{fieldname}"
+		if frappe.db.exists("Custom Field", cf_name):
+			frappe.delete_doc("Custom Field", cf_name, force=True)
+
+	frappe.db.commit()
