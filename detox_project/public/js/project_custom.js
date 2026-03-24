@@ -241,14 +241,14 @@ function show_budget_dashboard(frm) {
             `;
 
 			(data.wbs_elements || []).forEach((wbs) => {
-				let pct = wbs.overall_utilization_pct || 0;
+				let pct = wbs.budget_utilization_pct || 0;
 				let cls = pct > 100 ? "table-danger" : pct > 80 ? "table-warning" : "";
 				html += `
                     <tr class="${cls}">
                         <td><a href="/app/wbs-element/${wbs.name}">${wbs.wbs_name}</a></td>
                         <td>${wbs.wbs_type || ""}</td>
-                        <td class="text-right">${format_currency(wbs.total_budget)}</td>
-                        <td class="text-right">${format_currency(wbs.total_spent)}</td>
+                        <td class="text-right">${format_currency(wbs.budget_amount)}</td>
+                        <td class="text-right">${format_currency(wbs.budget_spent)}</td>
                         <td class="text-right">${pct.toFixed(1)}%</td>
                     </tr>
                 `;
