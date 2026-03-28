@@ -67,23 +67,6 @@ class SubWBSElement(Document):
 			or 0
 		)
 
-		# Also count old-style POs for backward compatibility
-		old_spent = (
-			frappe.db.sql(
-				"""
-				SELECT COALESCE(SUM(grand_total), 0)
-				FROM `tabPurchase Order`
-				WHERE custom_sub_wbs_element = %s AND docstatus = 1
-				AND name NOT IN (
-					SELECT DISTINCT parent FROM `tabWBS Allocation`
-					WHERE parenttype = 'Purchase Order' AND sub_wbs_element = %s
-				)
-				""",
-				(self.name, self.name),
-			)[0][0]
-			or 0
-		)
-
-		self.budget_spent = spent + old_spent
+		self.budget_spent = spent
 		self.calculate_totals()
 		self.save(ignore_permissions=True)

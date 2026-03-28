@@ -199,14 +199,6 @@
   {
    "link_doctype": "Sub WBS Element",
    "link_fieldname": "main_wbs_element"
-  },
-  {
-   "link_doctype": "Material Request",
-   "link_fieldname": "custom_wbs_element"
-  },
-  {
-   "link_doctype": "Purchase Order",
-   "link_fieldname": "custom_wbs_element"
   }
  ],
  "modified": "2026-03-16 12:57:47.993857",

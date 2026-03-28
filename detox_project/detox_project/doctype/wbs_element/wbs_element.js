@@ -71,26 +71,6 @@ frappe.ui.form.on("WBS Element", {
 
 		if (!frm.is_new()) {
 			frm.add_custom_button(
-				__("Material Requests"),
-				() => {
-					frappe.set_route("List", "Material Request", {
-						custom_wbs_element: frm.doc.name,
-					});
-				},
-				__("View")
-			);
-
-			frm.add_custom_button(
-				__("Purchase Orders"),
-				() => {
-					frappe.set_route("List", "Purchase Order", {
-						custom_wbs_element: frm.doc.name,
-					});
-				},
-				__("View")
-			);
-
-			frm.add_custom_button(
 				__("Sub WBS Elements"),
 				() => {
 					frappe.set_route("List", "Sub WBS Element", {

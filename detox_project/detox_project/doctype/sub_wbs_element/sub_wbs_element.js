@@ -12,11 +12,10 @@ frappe.ui.form.on("Sub WBS Element", {
 				__("Material Request"),
 				() => {
 					frappe.new_doc("Material Request", {
-						custom_wbs_element: frm.doc.main_wbs_element,
-						custom_sub_wbs_element: frm.doc.name,
 						project: frm.doc.project,
 						company: frm.doc.company,
 					});
+					frappe.route_options = { _wbs_element: frm.doc.main_wbs_element };
 				},
 				__("Create")
 			);

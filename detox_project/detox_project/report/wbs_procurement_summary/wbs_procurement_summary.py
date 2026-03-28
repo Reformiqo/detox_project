@@ -54,11 +54,12 @@ def get_data(filters):
 
 	data = []
 	for wbs in wbs_elements:
-		for mr in frappe.get_all(
-			"Material Request",
-			filters={"custom_wbs_element": wbs.name, "docstatus": ["<", 2]},
-			fields=["name", "transaction_date as date", "status"],
-		):
+		for mr in frappe.db.sql("""
+			SELECT DISTINCT mr.name, mr.transaction_date as date, mr.status
+			FROM `tabMaterial Request` mr
+			JOIN `tabWBS Allocation` wa ON wa.parent = mr.name AND wa.parenttype = 'Material Request'
+			WHERE wa.wbs_element = %s AND mr.docstatus < 2
+		""", wbs.name, as_dict=True):
 			data.append(
 				{
 					"wbs_element": wbs.name,
@@ -73,11 +74,12 @@ def get_data(filters):
 				}
 			)
 
-		for po in frappe.get_all(
-			"Purchase Order",
-			filters={"custom_wbs_element": wbs.name, "docstatus": 1},
-			fields=["name", "supplier", "transaction_date as date", "grand_total", "status"],
-		):
+		for po in frappe.db.sql("""
+			SELECT DISTINCT po.name, po.supplier, po.transaction_date as date, po.grand_total, po.status
+			FROM `tabPurchase Order` po
+			JOIN `tabWBS Allocation` wa ON wa.parent = po.name AND wa.parenttype = 'Purchase Order'
+			WHERE wa.wbs_element = %s AND po.docstatus = 1
+		""", wbs.name, as_dict=True):
 			data.append(
 				{
 					"wbs_element": wbs.name,
@@ -92,11 +94,12 @@ def get_data(filters):
 				}
 			)
 
-		for pi in frappe.get_all(
-			"Purchase Invoice",
-			filters={"custom_wbs_element": wbs.name, "docstatus": 1},
-			fields=["name", "supplier", "posting_date as date", "grand_total", "status"],
-		):
+		for pi in frappe.db.sql("""
+			SELECT DISTINCT pi.name, pi.supplier, pi.posting_date as date, pi.grand_total, pi.status
+			FROM `tabPurchase Invoice` pi
+			JOIN `tabWBS Allocation` wa ON wa.parent = pi.name AND wa.parenttype = 'Purchase Invoice'
+			WHERE wa.wbs_element = %s AND pi.docstatus = 1
+		""", wbs.name, as_dict=True):
 			data.append(
 				{
 					"wbs_element": wbs.name,

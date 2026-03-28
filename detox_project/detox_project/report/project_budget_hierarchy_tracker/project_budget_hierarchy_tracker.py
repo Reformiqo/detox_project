@@ -187,19 +187,6 @@ def get_linked_docs(wbs_name, sub_wbs_name=None, level="wbs"):
                 ORDER BY wa.parent
             """.format(table=table_name), (doctype, wbs_name))
 
-        # Also get old-style docs (backward compat)
-        if level == "wbs":
-            old_names = frappe.db.sql("""
-                SELECT name FROM `{table}`
-                WHERE custom_wbs_element = %s AND docstatus < 2
-                AND name NOT IN (
-                    SELECT DISTINCT parent FROM `tabWBS Allocation`
-                    WHERE parenttype = %s AND wbs_element = %s
-                )
-                ORDER BY name
-            """.format(table=table_name), (wbs_name, doctype, wbs_name))
-            names = list(names) + list(old_names)
-
         route = doctype_route[doctype]
         doc_names = [n[0] for n in names]
         # Format as comma-separated clickable links

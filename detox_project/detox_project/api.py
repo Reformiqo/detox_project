@@ -58,14 +58,6 @@ def on_project_update(doc, method):
 def validate_material_request_budget(doc, method):
 	"""Soft warning per WBS allocation row if budget nearing limit."""
 	if not doc.get("custom_wbs_allocations"):
-		# Backward compat: check old field
-		if not doc.get("custom_wbs_element"):
-			return
-		_validate_single_wbs_budget(
-			doc, doc.get("custom_wbs_element"),
-			sum(flt(item.amount) for item in doc.items),
-			warn_only=True,
-		)
 		return
 
 	for row in doc.custom_wbs_allocations:
@@ -80,13 +72,6 @@ def validate_material_request_budget(doc, method):
 def validate_po_budget(doc, method):
 	"""Hard block per WBS allocation row if budget exceeded."""
 	if not doc.get("custom_wbs_allocations"):
-		# Backward compat: check old field
-		if not doc.get("custom_wbs_element"):
-			return
-		_validate_single_wbs_budget(
-			doc, doc.get("custom_wbs_element"), flt(doc.grand_total),
-			warn_only=False,
-		)
 		return
 
 	for row in doc.custom_wbs_allocations:
@@ -372,10 +357,7 @@ def _update_wbs_spent(doc):
 				sub_wbs_set.add(row.sub_wbs_element)
 	else:
 		# Backward compat
-		if doc.get("custom_wbs_element"):
-			wbs_set.add(doc.custom_wbs_element)
-		if doc.get("custom_sub_wbs_element"):
-			sub_wbs_set.add(doc.custom_sub_wbs_element)
+		# Old fields removed — no backward compat needed
 
 	for wbs_name in wbs_set:
 		try:
