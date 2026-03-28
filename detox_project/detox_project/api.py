@@ -356,8 +356,7 @@ def _update_wbs_spent(doc):
 			if row.sub_wbs_element:
 				sub_wbs_set.add(row.sub_wbs_element)
 	else:
-		# Backward compat
-		# Old fields removed — no backward compat needed
+		pass  # Old fields removed — no backward compat needed
 
 	for wbs_name in wbs_set:
 		try:
