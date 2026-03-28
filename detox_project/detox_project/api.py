@@ -59,10 +59,10 @@ def validate_material_request_budget(doc, method):
 	"""Soft warning per WBS allocation row if budget nearing limit."""
 	if not doc.get("custom_wbs_allocations"):
 		# Backward compat: check old field
-		if not doc.custom_wbs_element:
+		if not doc.get("custom_wbs_element"):
 			return
 		_validate_single_wbs_budget(
-			doc, doc.custom_wbs_element,
+			doc, doc.get("custom_wbs_element"),
 			sum(flt(item.amount) for item in doc.items),
 			warn_only=True,
 		)
@@ -80,10 +80,11 @@ def validate_material_request_budget(doc, method):
 def validate_po_budget(doc, method):
 	"""Hard block per WBS allocation row if budget exceeded."""
 	if not doc.get("custom_wbs_allocations"):
-		if not doc.custom_wbs_element:
+		# Backward compat: check old field
+		if not doc.get("custom_wbs_element"):
 			return
 		_validate_single_wbs_budget(
-			doc, doc.custom_wbs_element, flt(doc.grand_total),
+			doc, doc.get("custom_wbs_element"), flt(doc.grand_total),
 			warn_only=False,
 		)
 		return
