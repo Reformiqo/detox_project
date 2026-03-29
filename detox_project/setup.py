@@ -453,11 +453,24 @@ def create_custom_fields():
 		# MATERIAL REQUEST — WBS Allocations
 		# ═══════════════════════════════════════════════════════════════════
 		"Material Request": [
+			dict(fieldname="custom_financial_model", fieldtype="Link",
+				label="Financial Model", options="Financial Model",
+				insert_after="schedule_date", in_standard_filter=1,
+				module="Detox Project"),
 			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
-				label="WBS Allocations", insert_after="schedule_date"),
+				label="WBS Allocations", insert_after="custom_financial_model"),
 			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
 				label="WBS Allocations", options="WBS Allocation",
 				insert_after="custom_wbs_allocations_section"),
+		],
+		# ═══════════════════════════════════════════════════════════════════
+		# BLANKET ORDER — Financial Model
+		# ═══════════════════════════════════════════════════════════════════
+		"Blanket Order": [
+			dict(fieldname="custom_financial_model", fieldtype="Link",
+				label="Financial Model", options="Financial Model",
+				insert_after="naming_series", in_standard_filter=1,
+				module="Detox Project"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
 		# MATERIAL REQUEST ITEM — Per-item WBS assignment
