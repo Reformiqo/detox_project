@@ -47,6 +47,7 @@
   {
    "fieldname": "parent_sub_wbs",
    "fieldtype": "Link",
+   "in_standard_filter": 1,
    "label": "Parent Sub WBS",
    "options": "Sub WBS Element"
   },
