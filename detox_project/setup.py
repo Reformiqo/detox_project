@@ -460,6 +460,16 @@ def create_custom_fields():
 				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
+		# MATERIAL REQUEST ITEM — Per-item WBS assignment
+		# ═══════════════════════════════════════════════════════════════════
+		"Material Request Item": [
+			dict(fieldname="custom_wbs_element", fieldtype="Link",
+				label="WBS Element", options="WBS Element", insert_after="project"),
+			dict(fieldname="custom_sub_wbs_element", fieldtype="Link",
+				label="Sub WBS Element", options="Sub WBS Element",
+				insert_after="custom_wbs_element"),
+		],
+		# ═══════════════════════════════════════════════════════════════════
 		# PURCHASE ORDER — WBS Allocations
 		# ═══════════════════════════════════════════════════════════════════
 		"Purchase Order": [
@@ -470,6 +480,16 @@ def create_custom_fields():
 				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
+		# PURCHASE ORDER ITEM — Per-item WBS assignment
+		# ═══════════════════════════════════════════════════════════════════
+		"Purchase Order Item": [
+			dict(fieldname="custom_wbs_element", fieldtype="Link",
+				label="WBS Element", options="WBS Element", insert_after="project"),
+			dict(fieldname="custom_sub_wbs_element", fieldtype="Link",
+				label="Sub WBS Element", options="Sub WBS Element",
+				insert_after="custom_wbs_element"),
+		],
+		# ═══════════════════════════════════════════════════════════════════
 		# PURCHASE INVOICE — WBS Allocations
 		# ═══════════════════════════════════════════════════════════════════
 		"Purchase Invoice": [
@@ -478,6 +498,16 @@ def create_custom_fields():
 			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
 				label="WBS Allocations", options="WBS Allocation",
 				insert_after="custom_wbs_allocations_section"),
+		],
+		# ═══════════════════════════════════════════════════════════════════
+		# PURCHASE INVOICE ITEM — Per-item WBS assignment
+		# ═══════════════════════════════════════════════════════════════════
+		"Purchase Invoice Item": [
+			dict(fieldname="custom_wbs_element", fieldtype="Link",
+				label="WBS Element", options="WBS Element", insert_after="project"),
+			dict(fieldname="custom_sub_wbs_element", fieldtype="Link",
+				label="Sub WBS Element", options="Sub WBS Element",
+				insert_after="custom_wbs_element"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
 		# PURCHASE RECEIPT — WBS Allocations
@@ -779,17 +809,13 @@ def cleanup_old_wbs_fields():
 		("Material Request", "custom_column_break_wbs_mr"),
 		("Material Request", "custom_project_approver"),
 		("Material Request", "custom_project_site"),
-		# MR Item
-		("Material Request Item", "custom_wbs_element"),
-		("Material Request Item", "custom_sub_wbs_element"),
+		# MR Item — KEEP: custom_wbs_element, custom_sub_wbs_element (needed for item-level WBS)
 		# PO
 		("Purchase Order", "custom_wbs_section"),
 		("Purchase Order", "custom_wbs_element"),
 		("Purchase Order", "custom_sub_wbs_element"),
 		("Purchase Order", "custom_po_type"),
-		# PO Item
-		("Purchase Order Item", "custom_wbs_element"),
-		("Purchase Order Item", "custom_sub_wbs_element"),
+		# PO Item — KEEP: custom_wbs_element, custom_sub_wbs_element (needed for item-level WBS)
 		# PI
 		("Purchase Invoice", "custom_wbs_section"),
 		("Purchase Invoice", "custom_wbs_element"),

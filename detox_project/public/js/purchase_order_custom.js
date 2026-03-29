@@ -1,50 +1,106 @@
+// Same logic as Material Request — adapted for Purchase Order
+
 frappe.ui.form.on("Purchase Order", {
+	onload(frm) {
+		if (!frm.is_new()) return;
+		var route_opts = frappe.route_options || {};
+		var sub_wbs = route_opts.sub_wbs_element || route_opts._wbs_element;
+		if (!sub_wbs) return;
+		delete frappe.route_options.sub_wbs_element;
+		delete frappe.route_options._wbs_element;
+
+		if (sub_wbs.startsWith("WBS-")) {
+			if (!frm.doc.custom_wbs_allocations || frm.doc.custom_wbs_allocations.length === 0) {
+				var row = frm.add_child("custom_wbs_allocations");
+				frappe.model.set_value(row.doctype, row.name, "wbs_element", sub_wbs);
+				frm.refresh_field("custom_wbs_allocations");
+			}
+		} else {
+			frappe.db.get_value("Sub WBS Element", sub_wbs,
+				["name", "main_wbs_element"], function (r) {
+					if (!r || !r.main_wbs_element) return;
+					frm.doc.custom_wbs_allocations = [];
+					var row = frappe.model.add_child(frm.doc, "WBS Allocation", "custom_wbs_allocations");
+					row.wbs_element = r.main_wbs_element;
+					row.sub_wbs_element = sub_wbs;
+					frm.refresh_field("custom_wbs_allocations");
+				}
+			);
+		}
+	},
+
 	refresh(frm) {
-		// WBS Allocation child table queries
 		frm.set_query("wbs_element", "custom_wbs_allocations", () => {
 			let filters = { status: "Active" };
 			if (frm.doc.project) filters.project = frm.doc.project;
 			return { filters };
 		});
-
 		frm.set_query("sub_wbs_element", "custom_wbs_allocations", (frm, cdt, cdn) => {
 			let row = locals[cdt][cdn];
 			let filters = { status: "Active" };
 			if (row.wbs_element) filters.main_wbs_element = row.wbs_element;
 			return { filters };
 		});
-
-		// Auto-add WBS allocation row when created from WBS Element
-		if (frm.is_new() && frappe.route_options && frappe.route_options._wbs_element) {
-			let wbs = frappe.route_options._wbs_element;
-			delete frappe.route_options._wbs_element;
-			if (!frm.doc.custom_wbs_allocations || frm.doc.custom_wbs_allocations.length === 0) {
-				let row = frm.add_child("custom_wbs_allocations");
-				frappe.model.set_value(row.doctype, row.name, "wbs_element", wbs);
-				frm.refresh_field("custom_wbs_allocations");
-			}
-		}
-
-		// Old single-field queries (backward compat, fields are hidden)
-		frm.set_query("custom_wbs_element", () => {
+		frm.set_query("custom_wbs_element", "items", () => {
 			let filters = { status: "Active" };
 			if (frm.doc.project) filters.project = frm.doc.project;
 			return { filters };
 		});
-
-		frm.set_query("custom_sub_wbs_element", () => {
+		frm.set_query("custom_sub_wbs_element", "items", (frm, cdt, cdn) => {
+			let row = locals[cdt][cdn];
 			let filters = { status: "Active" };
-			if (frm.doc.custom_wbs_element) filters.main_wbs_element = frm.doc.custom_wbs_element;
+			if (row.custom_wbs_element) filters.main_wbs_element = row.custom_wbs_element;
 			return { filters };
 		});
+		calculate_wbs_allocated_amounts_po(frm);
 	},
+});
+
+frappe.ui.form.on("Purchase Order Item", {
+	custom_wbs_element(frm) { calculate_wbs_allocated_amounts_po(frm); },
+	custom_sub_wbs_element(frm) { calculate_wbs_allocated_amounts_po(frm); },
+	amount(frm) { handle_single_wbs_auto_assign_po(frm); calculate_wbs_allocated_amounts_po(frm); },
+	rate(frm) { handle_single_wbs_auto_assign_po(frm); calculate_wbs_allocated_amounts_po(frm); },
+	qty(frm) { handle_single_wbs_auto_assign_po(frm); calculate_wbs_allocated_amounts_po(frm); },
+	items_remove(frm) { calculate_wbs_allocated_amounts_po(frm); },
 });
 
 frappe.ui.form.on("WBS Allocation", {
-	wbs_element(frm, cdt, cdn) {
-		let row = locals[cdt][cdn];
-		if (row.wbs_element) {
-			frappe.model.set_value(cdt, cdn, "sub_wbs_element", "");
-		}
-	},
+	wbs_element(frm) { handle_single_wbs_auto_assign_po(frm); calculate_wbs_allocated_amounts_po(frm); },
+	sub_wbs_element(frm) { handle_single_wbs_auto_assign_po(frm); calculate_wbs_allocated_amounts_po(frm); },
+	custom_wbs_allocations_remove(frm) { calculate_wbs_allocated_amounts_po(frm); },
 });
+
+function handle_single_wbs_auto_assign_po(frm) {
+	var allocs = frm.doc.custom_wbs_allocations || [];
+	if (allocs.length !== 1 || !allocs[0].wbs_element) return;
+	var w = allocs[0], updated = false;
+	(frm.doc.items || []).forEach(function (item) {
+		if (!item.custom_wbs_element) {
+			frappe.model.set_value(item.doctype, item.name, "custom_wbs_element", w.wbs_element);
+			updated = true;
+		}
+		if (!item.custom_sub_wbs_element && w.sub_wbs_element) {
+			frappe.model.set_value(item.doctype, item.name, "custom_sub_wbs_element", w.sub_wbs_element);
+			updated = true;
+		}
+	});
+	if (updated) frm.refresh_field("items");
+}
+
+function calculate_wbs_allocated_amounts_po(frm) {
+	var allocs = frm.doc.custom_wbs_allocations || [];
+	if (allocs.length === 1 && allocs[0].wbs_element) handle_single_wbs_auto_assign_po(frm);
+	var map = {};
+	(frm.doc.items || []).forEach(function (item) {
+		var key = (item.custom_wbs_element || "") + "||" + (item.custom_sub_wbs_element || "");
+		map[key] = (map[key] || 0) + flt(item.amount);
+	});
+	allocs.forEach(function (alloc) {
+		var key = (alloc.wbs_element || "") + "||" + (alloc.sub_wbs_element || "");
+		var amt = map[key] || 0;
+		if (flt(alloc.allocated_amount) !== amt)
+			frappe.model.set_value(alloc.doctype, alloc.name, "allocated_amount", amt);
+	});
+	frm.refresh_field("custom_wbs_allocations");
+}
