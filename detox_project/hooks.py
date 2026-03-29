@@ -35,7 +35,18 @@ doctype_js = {
 # --------------------------------------------------------------------------
 # App Include JS — Tender Management integration (loaded globally)
 # --------------------------------------------------------------------------
-app_include_js = ["/assets/detox_project/js/tender_management.js"]
+# --------------------------------------------------------------------------
+# Accounting Dimensions — add section to these additional doctypes
+# --------------------------------------------------------------------------
+accounting_dimension_doctypes = [
+	"Material Request",
+	"Blanket Order",
+]
+
+app_include_js = [
+	"/assets/detox_project/js/tender_management.js",
+	"/assets/detox_project/js/accounting_dimensions_uncollapse.js",
+]
 
 # --------------------------------------------------------------------------
 # Document Events
