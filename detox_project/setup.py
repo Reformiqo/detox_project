@@ -732,6 +732,11 @@ def migrate_wbs_allocations():
 
 	for doctype in ("Material Request", "Purchase Order", "Purchase Invoice"):
 		table_field = "custom_wbs_allocations"
+
+		# Skip if old columns don't exist (already migrated or never had them)
+		if not frappe.db.has_column(doctype, "custom_wbs_element"):
+			continue
+
 		# Find docs with old WBS element but no allocation rows
 		docs = frappe.db.sql(
 			"""
