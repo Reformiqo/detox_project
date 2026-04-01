@@ -3,7 +3,7 @@
   "attach_files": "",
   "attach_print": 0,
   "channel": "Email",
-  "condition": "doc.budget_utilization_pct >= 80",
+  "condition": "(doc.budget_utilization_pct or 0) >= 80",
   "condition_type": "Python",
   "date_changed": null,
   "datetime_changed": null,

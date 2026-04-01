@@ -654,7 +654,7 @@ def setup_notifications():
 				"document_type": "WBS Element",
 				"event": "Value Change",
 				"value_changed": "budget_utilization_pct",
-				"condition": "doc.budget_utilization_pct >= 80",
+				"condition": "(doc.budget_utilization_pct or 0) >= 80",
 				"channel": "Email",
 				"message": """<p>WBS Element <b>{{ doc.wbs_name }}</b> ({{ doc.name }}) has reached
 <b>{{ doc.budget_utilization_pct }}%</b> budget utilization.</p>
