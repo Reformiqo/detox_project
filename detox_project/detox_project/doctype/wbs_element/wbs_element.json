@@ -13,6 +13,7 @@
   "project",
   "financial_model",
   "category",
+  "budget_type",
   "company",
   "section_break_details",
   "site",
@@ -193,6 +194,14 @@
    "fieldtype": "Link",
    "label": "Category",
    "options": "Project Cost Category"
+  },
+  {
+   "fieldname": "budget_type",
+   "fieldtype": "Select",
+   "label": "Budget Type",
+   "options": "\nCAPEX\nOPEX",
+   "in_standard_filter": 1,
+   "description": "CAPEX or OPEX — determines which FM tab this WBS belongs to"
   }
  ],
  "links": [

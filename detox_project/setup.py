@@ -450,6 +450,14 @@ def create_custom_fields():
 			),
 		],
 		# ═══════════════════════════════════════════════════════════════════
+		# FM EXPENSE ITEM — Category for OPEX WBS linking
+		# ═══════════════════════════════════════════════════════════════════
+		"FM Expense Item": [
+			dict(fieldname="custom_category", fieldtype="Link",
+				label="Category", options="Project Cost Category",
+				insert_after="expense_head", in_list_view=1),
+		],
+		# ═══════════════════════════════════════════════════════════════════
 		# MATERIAL REQUEST — WBS Allocations
 		# ═══════════════════════════════════════════════════════════════════
 		"Material Request": [

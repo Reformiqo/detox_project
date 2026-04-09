@@ -100,6 +100,13 @@ frappe.ui.form.on("WBS Element", {
 			frm.set_value("category", "");
 		}
 	},
+
+	budget_type(frm) {
+		set_category_filter(frm);
+		if (frm.doc.category) {
+			frm.set_value("category", "");
+		}
+	},
 });
 
 function set_category_filter(frm) {
@@ -107,7 +114,10 @@ function set_category_filter(frm) {
 		if (frm.doc.financial_model) {
 			return {
 				query: "detox_project.detox_project.api.get_fm_categories",
-				filters: { financial_model: frm.doc.financial_model },
+				filters: {
+					financial_model: frm.doc.financial_model,
+					budget_type: frm.doc.budget_type || "",
+				},
 			};
 		}
 		return { filters: { enabled: 1 } };

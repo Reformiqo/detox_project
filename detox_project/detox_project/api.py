@@ -412,25 +412,61 @@ def _validate_single_wbs_budget(doc, wbs_name, amount, warn_only=False, row_labe
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def get_fm_categories(doctype, txt, searchfield, start, page_len, filters):
-	"""Return Project Cost Categories from a Financial Model's Project Cost Breakdown."""
+	"""Return Project Cost Categories from a Financial Model.
+
+	If budget_type=CAPEX: categories from FM Project Cost Item (CAPEX tab)
+	If budget_type=OPEX: categories from FM Expense Item (OPEX tab)
+	If blank: categories from both tabs combined
+	"""
 	financial_model = filters.get("financial_model")
 	if not financial_model:
 		return []
 
-	return frappe.db.sql(
-		"""
-		SELECT DISTINCT pci.category, pci.category
-		FROM `tabFM Project Cost Item` pci
-		WHERE pci.parent = %(financial_model)s
-		AND pci.parenttype = 'Financial Model'
-		AND pci.category LIKE %(txt)s
-		ORDER BY pci.category
-		LIMIT %(page_len)s OFFSET %(start)s
-		""",
-		{
-			"financial_model": financial_model,
-			"txt": f"%%{txt}%%",
-			"page_len": page_len,
-			"start": start,
-		},
-	)
+	budget_type = filters.get("budget_type", "")
+	params = {
+		"financial_model": financial_model,
+		"txt": f"%%{txt}%%",
+		"page_len": page_len,
+		"start": start,
+	}
+
+	if budget_type == "CAPEX":
+		return frappe.db.sql("""
+			SELECT DISTINCT pci.category, pci.category
+			FROM `tabFM Project Cost Item` pci
+			WHERE pci.parent = %(financial_model)s
+			AND pci.parenttype = 'Financial Model'
+			AND pci.category LIKE %(txt)s
+			ORDER BY pci.category
+			LIMIT %(page_len)s OFFSET %(start)s
+		""", params)
+
+	elif budget_type == "OPEX":
+		return frappe.db.sql("""
+			SELECT DISTINCT ei.custom_category, ei.custom_category
+			FROM `tabFM Expense Item` ei
+			WHERE ei.parent = %(financial_model)s
+			AND ei.parenttype = 'Financial Model'
+			AND ei.custom_category IS NOT NULL
+			AND ei.custom_category != ''
+			AND ei.custom_category LIKE %(txt)s
+			ORDER BY ei.custom_category
+			LIMIT %(page_len)s OFFSET %(start)s
+		""", params)
+
+	else:
+		# Both CAPEX and OPEX categories
+		return frappe.db.sql("""
+			SELECT DISTINCT category, category FROM (
+				SELECT pci.category FROM `tabFM Project Cost Item` pci
+				WHERE pci.parent = %(financial_model)s AND pci.parenttype = 'Financial Model'
+				AND pci.category LIKE %(txt)s
+				UNION
+				SELECT ei.custom_category FROM `tabFM Expense Item` ei
+				WHERE ei.parent = %(financial_model)s AND ei.parenttype = 'Financial Model'
+				AND ei.custom_category IS NOT NULL AND ei.custom_category != ''
+				AND ei.custom_category LIKE %(txt)s
+			) combined
+			ORDER BY category
+			LIMIT %(page_len)s OFFSET %(start)s
+		""", params)
