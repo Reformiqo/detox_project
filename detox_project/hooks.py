@@ -15,7 +15,7 @@ app_version = "2.0.0"
 fixtures = [
 	{"dt": "Custom Field", "filters": [["module", "=", "Detox Project"]]},
 	{"dt": "Property Setter", "filters": [["module", "=", "Detox Project"]]},
-	{"dt": "Workflow", "filters": [["name", "in", ["Project Approval Workflow"]]]},
+	{"dt": "Workflow", "filters": [["name", "in", ["Project Approval Workflow", "Financial Model Approval Workflow"]]]},
 	{"dt": "Notification", "filters": [["module", "=", "Detox Project"]]},
 ]
 

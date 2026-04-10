@@ -17,6 +17,8 @@ def after_migrate():
 	migrate_wbs_allocations()
 	fix_budget_notification()
 	cleanup_old_wbs_fields()
+	create_fm_property_setters()
+	setup_fm_workflow()
 
 
 def create_custom_fields():
@@ -458,6 +460,28 @@ def create_custom_fields():
 				insert_after="expense_head", in_list_view=1),
 		],
 		# ═══════════════════════════════════════════════════════════════════
+		# FINANCIAL MODEL — OPEX Working Capital
+		# ═══════════════════════════════════════════════════════════════════
+		"Financial Model": [
+			dict(fieldname="custom_opex_wc_section", fieldtype="Section Break",
+				label="OPEX Working Capital", insert_after="total_extra_expenses"),
+			dict(fieldname="custom_opex_working_capital", fieldtype="Currency",
+				label="OPEX Working Capital Amount", insert_after="custom_opex_wc_section"),
+			dict(fieldname="custom_opex_interest_rate_wc", fieldtype="Percent",
+				label="Interest Rate - Working Capital % (OPEX)",
+				insert_after="custom_opex_working_capital", default="12"),
+			dict(fieldname="custom_column_break_opex_wc", fieldtype="Column Break",
+				insert_after="custom_opex_interest_rate_wc"),
+			dict(fieldname="custom_opex_interest_on_wc_annual", fieldtype="Currency",
+				label="Interest on WC - Annual (OPEX)",
+				insert_after="custom_column_break_opex_wc", read_only=1,
+				description="WC Amount x WC Interest Rate. Fixed each year."),
+			dict(fieldname="custom_opex_moratorium_years", fieldtype="Float",
+				label="Moratorium Period (Years) (OPEX)",
+				insert_after="custom_opex_interest_on_wc_annual",
+				description="No repayment during this period. Decimal allowed (e.g. 0.5 = 6 months)"),
+		],
+		# ═══════════════════════════════════════════════════════════════════
 		# MATERIAL REQUEST — WBS Allocations
 		# ═══════════════════════════════════════════════════════════════════
 		"Material Request": [
@@ -858,3 +882,116 @@ def cleanup_old_wbs_fields():
 			frappe.delete_doc("Custom Field", cf_name, force=True)
 
 	frappe.db.commit()
+
+
+def create_fm_property_setters():
+	"""Create Property Setters for Financial Model customizations."""
+	if not frappe.db.exists("DocType", "Financial Model"):
+		return
+
+	# ── Rename Working Capital to CAPEX Working Capital ──
+	_set_property("Financial Model", "working_capital_amount", "label",
+		"CAPEX Working Capital Amount")
+
+	# ── Make equity_percent and loan_percent editable ──
+	_set_property("Financial Model", "equity_percent", "read_only", "0")
+	_set_property("Financial Model", "loan_percent", "read_only", "0")
+
+	# ── Display "(in Cr)" description on Currency/summary fields ──
+	cr_fields = [
+		"total_project_cost", "total_balance_amount", "equity_amount",
+		"loan_amount", "working_capital_amount", "total_annual_revenue",
+		"total_annual_expenses", "total_extra_expenses", "gross_profit",
+		"ebitda", "ebit", "pbt", "pat", "npv", "terminal_value",
+	]
+	for fieldname in cr_fields:
+		_set_property("Financial Model", fieldname, "description", "(in Cr)")
+
+	# ── Add CBG, INC, COMPOST to FM Expense Item.section options ──
+	_set_property("FM Expense Item", "section", "options",
+		"\nBiomining\nProcessing\nSharding - RDF\nOther\nCBG\nINC\nCOMPOST")
+
+	frappe.db.commit()
+
+
+def setup_fm_workflow():
+	"""Create 4-level approval workflow for Financial Model."""
+	# ── Create Roles ──
+	for role_name in ("FM Maker", "FM Checker", "FM Approver", "FM HOD"):
+		if not frappe.db.exists("Role", role_name):
+			frappe.get_doc({
+				"doctype": "Role",
+				"role_name": role_name,
+				"desk_access": 1,
+			}).insert(ignore_permissions=True)
+
+	# ── Create Workflow States ──
+	state_styles = {
+		"Pending Review": "Primary",
+		"Pending Approval": "Info",
+		"Pending HOD Approval": "Warning",
+	}
+	for state_name, style in state_styles.items():
+		if not frappe.db.exists("Workflow State", state_name):
+			frappe.get_doc({
+				"doctype": "Workflow State",
+				"workflow_state_name": state_name,
+				"style": style,
+			}).insert(ignore_permissions=True)
+
+	# ── Create Workflow Action Masters ──
+	for action_name in ("Submit for Review", "Approve Review", "Send Back",
+						"Final Approve"):
+		if not frappe.db.exists("Workflow Action Master", action_name):
+			frappe.get_doc({
+				"doctype": "Workflow Action Master",
+				"workflow_action_name": action_name,
+			}).insert(ignore_permissions=True)
+
+	# ── Create Workflow ──
+	wf_name = "Financial Model Approval Workflow"
+	if frappe.db.exists("Workflow", wf_name):
+		return
+
+	try:
+		workflow = frappe.get_doc({
+			"doctype": "Workflow",
+			"workflow_name": wf_name,
+			"document_type": "Financial Model",
+			"is_active": 1,
+			"send_email_alert": 1,
+			"states": [
+				{"state": "Draft", "style": "Warning", "doc_status": "0",
+					"allow_edit": "FM Maker"},
+				{"state": "Pending Review", "style": "Primary", "doc_status": "0",
+					"allow_edit": "FM Checker"},
+				{"state": "Pending Approval", "style": "Info", "doc_status": "0",
+					"allow_edit": "FM Approver"},
+				{"state": "Pending HOD Approval", "style": "Warning", "doc_status": "0",
+					"allow_edit": "FM HOD"},
+				{"state": "Approved", "style": "Success", "doc_status": "1",
+					"allow_edit": "FM HOD"},
+				{"state": "Rejected", "style": "Danger", "doc_status": "0",
+					"allow_edit": "FM Maker"},
+			],
+			"transitions": [
+				{"state": "Draft", "action": "Submit for Review",
+					"next_state": "Pending Review", "allowed": "FM Maker"},
+				{"state": "Pending Review", "action": "Approve Review",
+					"next_state": "Pending Approval", "allowed": "FM Checker"},
+				{"state": "Pending Review", "action": "Send Back",
+					"next_state": "Draft", "allowed": "FM Checker"},
+				{"state": "Pending Approval", "action": "Approve",
+					"next_state": "Pending HOD Approval", "allowed": "FM Approver"},
+				{"state": "Pending Approval", "action": "Reject",
+					"next_state": "Draft", "allowed": "FM Approver"},
+				{"state": "Pending HOD Approval", "action": "Final Approve",
+					"next_state": "Approved", "allowed": "FM HOD"},
+				{"state": "Pending HOD Approval", "action": "Reject",
+					"next_state": "Draft", "allowed": "FM HOD"},
+			],
+		})
+		workflow.insert(ignore_permissions=True)
+		frappe.db.commit()
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "FM Workflow Setup Error")
