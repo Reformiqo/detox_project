@@ -4,6 +4,36 @@ from frappe.model.document import Document
 
 
 class SubWBSElement(Document):
+	def autoname(self):
+		if not self.main_wbs_element:
+			frappe.throw(_("Main WBS Element is required."))
+		if self.parent_sub_wbs:
+			base = self.parent_sub_wbs.replace("SUB ", "", 1)
+			siblings = frappe.db.get_all(
+				"Sub WBS Element",
+				filters={"parent_sub_wbs": self.parent_sub_wbs},
+				pluck="name",
+			)
+		else:
+			base = self.main_wbs_element
+			siblings = frappe.db.get_all(
+				"Sub WBS Element",
+				filters={
+					"main_wbs_element": self.main_wbs_element,
+					"parent_sub_wbs": ["is", "not set"],
+				},
+				pluck="name",
+			)
+		numbers = []
+		for n in siblings:
+			try:
+				clean = n.replace("SUB ", "", 1)
+				numbers.append(int(clean.split(".")[-1]))
+			except (ValueError, IndexError):
+				pass
+		next_num = max(numbers) + 1 if numbers else 1
+		self.name = f"SUB {base}.{next_num}"
+
 	def validate(self):
 		self.calculate_totals()
 		self.validate_budget_against_parent()

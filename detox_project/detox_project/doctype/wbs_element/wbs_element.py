@@ -5,6 +5,25 @@ from frappe.utils import flt
 
 
 class WBSElement(Document):
+	def autoname(self):
+		if not self.project:
+			frappe.throw(_("Project is required."))
+		project_num = self.project.split("-")[-1][-3:]
+		base = f"WBS-{project_num}"
+		existing = frappe.db.get_all(
+			"WBS Element",
+			filters={"project": self.project, "name": ["like", f"{base}.%"]},
+			pluck="name",
+		)
+		numbers = []
+		for n in existing:
+			try:
+				numbers.append(int(n.split(".")[-1]))
+			except (ValueError, IndexError):
+				pass
+		next_num = max(numbers) + 1 if numbers else 1
+		self.name = f"{base}.{next_num}"
+
 	def validate(self):
 		self.calculate_totals()
 		self.validate_category_budget()
