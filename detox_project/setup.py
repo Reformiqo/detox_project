@@ -564,6 +564,40 @@ def create_custom_fields():
 				label="WBS Allocations", options="WBS Allocation",
 				insert_after="custom_wbs_allocations_section"),
 		],
+		# ═══════════════════════════════════════════════════════════════════
+		# ZWR12 REPORT PREREQ — Quality Inspection remarks
+		# ═══════════════════════════════════════════════════════════════════
+		"Quality Inspection": [
+			dict(fieldname="custom_remarks_chemist", fieldtype="Small Text",
+				label="Remarks (Chemist)", insert_after="custom_analysis_summary",
+				description="Chemist's quick-check observations (e.g. Cl-1.54%). Shown in Gate Pass ZWR12 report."),
+			dict(fieldname="custom_remarks_crm", fieldtype="Small Text",
+				label="Remarks (CRM)", insert_after="custom_remarks_chemist",
+				description="CRM action on the QC result (e.g. 'No Activity Required.')."),
+		],
+		# ═══════════════════════════════════════════════════════════════════
+		# ZWR12 REPORT PREREQ — Gate Pass document review + QI status denormal
+		# ═══════════════════════════════════════════════════════════════════
+		"Gate Pass": [
+			dict(fieldname="custom_document_review", fieldtype="Select",
+				label="Document Review",
+				options="\nPending\nAccepted\nRejected",
+				insert_after="term_card",
+				default="Pending"),
+			dict(fieldname="custom_qi_status", fieldtype="Data",
+				label="QI Status",
+				insert_after="quality_review",
+				read_only=1,
+				description="Latest QC decision (Accepted/Rejected/Pending). Denormalised from Quality Inspection."),
+		],
+		# ═══════════════════════════════════════════════════════════════════
+		# ZWR12 REPORT PREREQ — Customer PCB ID
+		# ═══════════════════════════════════════════════════════════════════
+		"Customer": [
+			dict(fieldname="custom_pcb_id", fieldtype="Data",
+				label="PCB ID", insert_after="customer_name",
+				description="Pollution Control Board ID for this customer. Appears in Gate Pass ZWR12 report."),
+		],
 	}
 
 	# ═══════════════════════════════════════════════════════════════════
