@@ -19,6 +19,87 @@ def after_migrate():
 	cleanup_old_wbs_fields()
 	create_fm_property_setters()
 	setup_fm_workflow()
+	unlock_orphaned_fm_child_rows()
+
+
+FM_CHILD_TABLES = (
+	"FM Revenue Item",
+	"FM Expense Item",
+	"FM Extra Expense Item",
+	"FM Project Cost Item",
+	"FM Year Projection",
+	"FM Loan Schedule",
+	"FM Depreciation Schedule",
+	"FM Budget Plan Link",
+)
+
+
+def unlock_orphaned_fm_child_rows():
+	"""ABP2-I184 layer 5: reset child rows whose parent is back in Draft.
+
+	Pattern: a Financial Model gets submitted (children docstatus=1),
+	then cancelled (children → 2), then the parent's docstatus is hand-
+	rewound to 0 to allow further editing — but the children remain at
+	docstatus=2, which Frappe treats as cancelled and locks read-only,
+	so users see a fully-Approved-state form they cannot edit even when
+	the workflow allow_edit gate is open.
+
+	This sweep finds parents with docstatus=0 whose children sit at
+	docstatus=2 and resets the children to draft, then bumps parent +
+	workflow modified timestamps so the desk frontend reloads cleanly.
+	Runs every after_migrate; idempotent.
+	"""
+	affected_parents = set()
+	for child_dt in FM_CHILD_TABLES:
+		try:
+			rows = frappe.db.sql(
+				"SELECT DISTINCT parent FROM `tab" + child_dt + "` "
+				"WHERE docstatus=2 AND parenttype='Financial Model'",
+				as_dict=True,
+			)
+		except Exception:
+			# child doctype absent on a fresh install — skip
+			continue
+		for r in rows:
+			affected_parents.add(r.parent)
+
+	if not affected_parents:
+		return
+
+	parents_to_unlock = [
+		p for p in affected_parents
+		if frappe.db.get_value("Financial Model", p, "docstatus") == 0
+	]
+	if not parents_to_unlock:
+		return
+
+	for parent in parents_to_unlock:
+		for child_dt in FM_CHILD_TABLES:
+			try:
+				frappe.db.sql(
+					"UPDATE `tab" + child_dt + "` SET docstatus=0 "
+					"WHERE parent=%s AND parenttype='Financial Model' "
+					"AND docstatus=2",
+					(parent,),
+				)
+			except Exception:
+				continue
+		frappe.db.sql(
+			"UPDATE `tabFinancial Model` SET modified=NOW() WHERE name=%s",
+			(parent,),
+		)
+
+	frappe.db.sql(
+		"UPDATE `tabWorkflow` SET modified=NOW() "
+		"WHERE name='Financial Model Approval Workflow'"
+	)
+	frappe.db.commit()
+	frappe.clear_cache(doctype="Financial Model")
+	frappe.clear_cache(doctype="Workflow")
+	print(
+		"[detox_project] unlocked %d FM(s) with orphan-cancelled child rows: %s"
+		% (len(parents_to_unlock), parents_to_unlock)
+	)
 
 
 def create_custom_fields():
