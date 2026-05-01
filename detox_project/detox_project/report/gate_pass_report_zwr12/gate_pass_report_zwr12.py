@@ -181,8 +181,17 @@ def get_data(filters):
 				"manifest_no": r.manifest_no,
 				"manifest_date": r.manifest_date,
 				"manifest_qty": r.manifest_qty,
-				"remarks_chemist": qi.get("custom_remarks_chemist") or qi.get("custom_analysis_summary") or "",
-				"remarks_crm": qi.get("custom_remarks_crm") or "",
+				# ABP2-I204: QI has 4 remark fields with two duplicate labels —
+				# pick whichever is populated.
+				# Chemist: `remarks` (Data) ↔ `custom_remarks_chemist` (Small Text)
+				# CRM:     `custom_remarks_crm_copy` (Data) ↔ `custom_remarks_crm` (Small Text)
+				"remarks_chemist": (qi.get("custom_remarks_chemist")
+					or qi.get("remarks")
+					or qi.get("custom_analysis_summary")
+					or ""),
+				"remarks_crm": (qi.get("custom_remarks_crm")
+					or qi.get("custom_remarks_crm_copy")
+					or ""),
 				"waste_inward_date": wi_date,
 				"vehicle_no": r.vehicle_no,
 				"transporter_name": r.transporter,
@@ -200,7 +209,7 @@ def get_data(filters):
 				"company_net_weight": r.company_net_weight,
 				"item_description": item_desc,
 				"waste_nature": r.waste_nature,
-				"document_review": r.custom_document_review,
+				"document_review": _derive_document_review(r.custom_document_review, r.workflow_state),
 				"term_card": r.term_card,
 				"qi_status": r.custom_qi_status or qi.get("status") or "",
 				"quality_review": r.quality_review,
@@ -332,13 +341,36 @@ def _fetch_gate_passes(filters):
 	return data
 
 
+
+def _derive_document_review(custom_value, workflow_state):
+	"""ABP2-I204: when `custom_document_review` is at the default 'Pending'
+	or unset, derive a sensible review status from the workflow state. Once
+	a Gate Pass passes QC Approval the document review is effectively done,
+	so the report should display 'Accepted' instead of leaving 'Pending'
+	contradicting the workflow status."""
+	ACCEPTED_STATES = {
+		"QC Approved", "Weighing Complete", "Pending Weight Approval",
+		"Vehicle Exited", "Submitted",
+	}
+	if workflow_state == "Cancelled":
+		return "Cancelled"
+	if custom_value and custom_value != "Pending":
+		return custom_value
+	if workflow_state in ACCEPTED_STATES:
+		return "Accepted"
+	return custom_value or "Pending"
+
+
 def _fetch_qi(gp_names):
 	"""Return latest submitted/saved QI per Gate Pass, keyed by GP name."""
 	if not gp_names:
 		return {}
 	qi_meta = frappe.get_meta("Quality Inspection")
 	extra_cols = []
-	for f in ("custom_remarks_chemist", "custom_remarks_crm", "custom_analysis_summary"):
+	# ABP2-I204: include all 4 candidate remark fields + the standard `remarks`
+	# field, so the report shows whichever one the user wrote into.
+	for f in ("custom_remarks_chemist", "custom_remarks_crm",
+			  "custom_remarks_crm_copy", "remarks", "custom_analysis_summary"):
 		if qi_meta.has_field(f):
 			extra_cols.append(f"qi.{f}")
 	extra_sql = (", " + ", ".join(extra_cols)) if extra_cols else ""
