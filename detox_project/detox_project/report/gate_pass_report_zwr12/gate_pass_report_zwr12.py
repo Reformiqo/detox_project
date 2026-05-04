@@ -395,12 +395,17 @@ def _fetch_qi(gp_names):
 
 
 def _fetch_waste_inward(gp_names):
-	"""posting_date of the submitted Waste Inward for each GP."""
+	"""Earliest Waste Inward date for each GP.
+
+	ABP2-I218: Waste Inward's field is `date` (relabelled to "Posting Date"
+	via Property Setter); there is no `posting_date` column. The query
+	previously failed with OperationalError "Unknown column 'posting_date'".
+	"""
 	if not gp_names:
 		return {}
 	rows = frappe.db.sql(
 		"""
-		SELECT gate_pass, MIN(posting_date) AS posting_date
+		SELECT gate_pass, MIN(date) AS posting_date
 		FROM `tabWaste Inward`
 		WHERE gate_pass IN %s AND docstatus = 1
 		GROUP BY gate_pass
