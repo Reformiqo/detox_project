@@ -110,6 +110,16 @@ def get_columns():
 		{"fieldname": "pincode", "label": _("Pincode"), "fieldtype": "Data", "width": 90},
 		{"fieldname": "customer_primary_address", "label": _("Customer Primary Address"),
 			"fieldtype": "Small Text", "width": 240},
+		# ABP2-I265 (Aarif 2026-05-15) — 4 additional columns
+		# requested for SEPPL's ZWR12 customisation.
+		{"fieldname": "qc_number", "label": _("QC Number"), "fieldtype": "Link",
+			"options": "Quality Inspection", "width": 160},
+		{"fieldname": "inward_qty", "label": _("Inward Qty"), "fieldtype": "Float",
+			"width": 100, "precision": 3},
+		{"fieldname": "vehicle_entry_date", "label": _("Vehicle Entry Date"),
+			"fieldtype": "Date", "width": 120},
+		{"fieldname": "waste_code_description", "label": _("Waste Code Description"),
+			"fieldtype": "Small Text", "width": 240},
 	]
 
 
@@ -131,6 +141,8 @@ def get_data(filters):
 
 	qi_by_gp = _fetch_qi(gp_names)
 	wi_by_gp = _fetch_waste_inward(gp_names)
+	# ABP2-I265 — Inward Qty column.
+	wi_qty_by_gp = _fetch_waste_inward_qty(gp_names)
 	so_count_by_so = _fetch_so_item_count(so_names)
 	so_uom_by_so = _fetch_so_first_uom(so_names)
 	sub_by_name = _fetch_subscriptions(sub_names)
@@ -228,6 +240,11 @@ def get_data(filters):
 				"district": addr.get("custom_district") or "",
 				"pincode": addr.get("pincode") or "",
 				"customer_primary_address": addr.get("full_address") or "",
+				# ABP2-I265 — 4 new columns.
+				"qc_number": qi.get("name"),
+				"inward_qty": wi_qty_by_gp.get(r.gate_pass_no),
+				"vehicle_entry_date": r.vehicle_entry_date,
+				"waste_code_description": r.waste_code_description or "",
 			}
 		)
 
@@ -320,7 +337,11 @@ def _fetch_gate_passes(filters):
 			gp.company_gross_weight,
 			gp.company_tare_weight,
 			gp.company_net_weight,
-			DATE(gp.vehicle_exit_time) AS vehicle_exit_date
+			DATE(gp.vehicle_exit_time) AS vehicle_exit_date,
+			-- ABP2-I265 — Vehicle Entry Date (from vehicle_entry_time
+			-- Datetime) + Description for the Waste Code Description col.
+			DATE(gp.vehicle_entry_time) AS vehicle_entry_date,
+			gp.description AS waste_code_description
 		FROM `tabGate Pass` gp
 		WHERE {where_clause}
 		ORDER BY gp.date DESC, gp.name
@@ -414,6 +435,31 @@ def _fetch_waste_inward(gp_names):
 		as_dict=True,
 	)
 	return {r.gate_pass: r.posting_date for r in rows}
+
+
+def _fetch_waste_inward_qty(gp_names):
+	"""ABP2-I265 — sum Waste Inward Item qty per Gate Pass.
+
+	Waste Inward reuses the `Gate Pass Item` child doctype for its
+	items table. We sum qty across all submitted Waste Inward
+	documents linked to each GP. If multiple Waste Inwards exist for
+	the same GP (rare), totals are added.
+	"""
+	if not gp_names:
+		return {}
+	rows = frappe.db.sql(
+		"""
+		SELECT wi.gate_pass, SUM(gpi.qty) AS inward_qty
+		FROM `tabWaste Inward` wi
+		LEFT JOIN `tabGate Pass Item` gpi
+			ON gpi.parent = wi.name AND gpi.parenttype = 'Waste Inward'
+		WHERE wi.gate_pass IN %s AND wi.docstatus = 1
+		GROUP BY wi.gate_pass
+		""",
+		[gp_names],
+		as_dict=True,
+	)
+	return {r.gate_pass: r.inward_qty for r in rows}
 
 
 def _fetch_so_item_count(so_names):

@@ -53,7 +53,8 @@ class TestZWR12WasteInwardJoin(IntegrationTestCase):
 				f"ABP2-I218: execute() must not raise OperationalError. "
 				f"Got: {exc}"
 			)
-		self.assertEqual(len(cols), 47)
+		# ABP2-I265 — 4 new columns appended → 51 total.
+		self.assertEqual(len(cols), 51)
 		self.assertIsInstance(data, list)
 
 	def test_sql_uses_date_not_posting_date(self):
