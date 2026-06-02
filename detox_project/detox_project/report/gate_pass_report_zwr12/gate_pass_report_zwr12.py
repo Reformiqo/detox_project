@@ -287,17 +287,41 @@ def _fetch_gate_passes(filters):
 		values["exit_to"] = filters.exit_to
 
 	gp_meta = frappe.get_meta("Gate Pass")
-	has_doc_review = gp_meta.has_field("custom_document_review")
+	has_custom_doc_review = gp_meta.has_field("custom_document_review")
+	has_doctype_doc_review = gp_meta.has_field("document_review_status")
 	has_qi_status = gp_meta.has_field("custom_qi_status")
 
-	if filters.get("document_review") and has_doc_review:
+	# ABP2-I362 (Aarif 2026-05-27) — Gate Pass has TWO fields labelled
+	# "Document Review": the doctype field `document_review_status` and
+	# the legacy Custom Field `custom_document_review`. The form's
+	# visible field is `document_review_status`; the old report
+	# query read only `custom_document_review`, which stays at its
+	# default Pending and made the report look frozen. Build a
+	# COALESCE that prefers the doctype field's non-empty,
+	# non-default value, falls back to the CF, and only then leaves
+	# it for `_derive_document_review` to back-fill from the
+	# workflow state.
+	if has_doctype_doc_review and has_custom_doc_review:
+		doc_review_col = (
+			"COALESCE(NULLIF(NULLIF(gp.document_review_status, ''), 'Pending'), "
+			"gp.custom_document_review)"
+		)
+	elif has_doctype_doc_review:
+		doc_review_col = "gp.document_review_status"
+	elif has_custom_doc_review:
+		doc_review_col = "gp.custom_document_review"
+	else:
+		doc_review_col = "NULL"
+
+	if filters.get("document_review") and (
+		has_doctype_doc_review or has_custom_doc_review
+	):
 		dr = filters.document_review if isinstance(filters.document_review, list) else [filters.document_review]
-		conditions.append("gp.custom_document_review IN %(document_review)s")
+		conditions.append(f"{doc_review_col} IN %(document_review)s")
 		values["document_review"] = tuple(dr)
 
 	where_clause = " AND ".join(conditions)
 
-	doc_review_col = "gp.custom_document_review" if has_doc_review else "NULL"
 	qi_status_col = "gp.custom_qi_status" if has_qi_status else "NULL"
 
 	data = frappe.db.sql(

@@ -111,3 +111,97 @@ class TestGatePassReportZWR12(IntegrationTestCase):
 
 	def test_08_inward_qty_fetcher_empty_input(self):
 		self.assertEqual(report._fetch_waste_inward_qty([]), {})
+
+
+# ─────────────────────────────────────────────────────────────────────
+# ABP2-I362 (Aarif 2026-05-27) — Document Review must reflect the
+# field the form actually updates (gp.document_review_status), not the
+# stale Custom Field gp.custom_document_review the prior report query
+# was reading.
+# ─────────────────────────────────────────────────────────────────────
+
+class TestABP2I362DocumentReviewRealtime(IntegrationTestCase):
+
+	# Snapshot keys we mutate during each scenario
+	_FIELDS = ("document_review_status", "custom_document_review",
+	           "workflow_state")
+
+	def setUp(self):
+		# Pick any GP we can poke; restore everything in tearDown.
+		self.gp_name = frappe.db.get_value("Gate Pass", {}, "name")
+		if not self.gp_name:
+			self.skipTest("No Gate Pass on this site to use as fixture.")
+		self._orig = {
+			k: frappe.db.get_value("Gate Pass", self.gp_name, k)
+			for k in self._FIELDS
+		}
+		self.company = frappe.db.get_value("Company", {}, "name")
+
+	def tearDown(self):
+		if getattr(self, "gp_name", None):
+			for k, v in (getattr(self, "_orig", {}) or {}).items():
+				frappe.db.set_value("Gate Pass", self.gp_name, k, v,
+				                    update_modified=False)
+			frappe.db.commit()
+
+	def _force_state(self, drs, cdr, ws):
+		frappe.db.set_value("Gate Pass", self.gp_name,
+		                    "document_review_status", drs,
+		                    update_modified=False)
+		frappe.db.set_value("Gate Pass", self.gp_name,
+		                    "custom_document_review", cdr,
+		                    update_modified=False)
+		frappe.db.set_value("Gate Pass", self.gp_name,
+		                    "workflow_state", ws,
+		                    update_modified=False)
+		frappe.db.commit()
+
+	def _run(self):
+		flt = frappe._dict(
+			company=self.company,
+			from_date="2026-01-01", to_date="2026-12-31",
+			gate_pass=[self.gp_name],
+		)
+		_cols, data = report.execute(filters=flt)
+		for r in data:
+			if r.get("gate_pass_no") == self.gp_name:
+				return r.get("document_review")
+		return None
+
+	def test_form_side_accepted_reflects_in_report(self):
+		"""Aarif's exact scenario: user updates document_review_status
+		to Accepted on the form while the stale custom_document_review
+		stays at Pending. Report MUST show Accepted."""
+		self._force_state("Accepted", "Pending", "Vehicle Entered")
+		self.assertEqual(self._run(), "Accepted")
+
+	def test_form_side_rejected_reflects_in_report(self):
+		self._force_state("Rejected", "Pending", "Vehicle Entered")
+		self.assertEqual(self._run(), "Rejected")
+
+	def test_custom_field_fallback_still_works(self):
+		"""For older Gate Passes that were tagged via the legacy
+		custom_document_review CF, the report must still show that
+		value when the doctype field is still at Pending."""
+		self._force_state("Pending", "Accepted", "Vehicle Entered")
+		self.assertEqual(self._run(), "Accepted")
+
+	def test_both_pending_with_neutral_state_stays_pending(self):
+		"""Both review fields at Pending AND workflow state hasn't
+		reached one of the ACCEPTED_STATES → report leaves it Pending."""
+		self._force_state("Pending", "Pending", "Vehicle Entered")
+		self.assertEqual(self._run(), "Pending")
+
+	def test_both_pending_after_qc_approval_derives_accepted(self):
+		"""Both review fields at Pending but the workflow has passed
+		QC Approval (or beyond) → _derive_document_review surfaces
+		Accepted (existing ABP2-I204 behaviour, preserved)."""
+		self._force_state("Pending", "Pending", "Vehicle Exited")
+		self.assertEqual(self._run(), "Accepted")
+
+	def test_doctype_field_wins_over_custom_field_when_both_set(self):
+		"""If the doctype field says Accepted but the CF still says
+		Rejected (legacy stale value), the report must pick the
+		doctype field — that's the one the user actually edited."""
+		self._force_state("Accepted", "Rejected", "Vehicle Entered")
+		self.assertEqual(self._run(), "Accepted")
