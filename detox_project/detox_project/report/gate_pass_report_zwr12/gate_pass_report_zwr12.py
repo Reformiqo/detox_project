@@ -257,9 +257,19 @@ def get_data(filters):
 def _fetch_gate_passes(filters):
 	conditions = [
 		"gp.company = %(company)s",
-		"gp.docstatus < 2",
 	]
 	values = {"company": filters.company, "from_date": filters.from_date, "to_date": filters.to_date}
+
+	# ABP2-I272 (Aarif) — "Document Status" filter on ERPNext docstatus,
+	# mirroring the Gate Pass ZWR15 Report. With a status selected we match
+	# exactly that docstatus (Cancelled included); with no selection we keep
+	# the historical default of excluding Cancelled documents.
+	if filters.get("docstatus"):
+		ds_map = {"Draft": 0, "Submitted": 1, "Cancelled": 2}
+		conditions.append("gp.docstatus = %(docstatus)s")
+		values["docstatus"] = ds_map.get(filters.docstatus, 0)
+	else:
+		conditions.append("gp.docstatus < 2")
 
 	if filters.get("gate_pass"):
 		gp_list = filters.gate_pass if isinstance(filters.gate_pass, list) else [filters.gate_pass]
@@ -643,6 +653,7 @@ def export_zwr12(filters=None):
 		(7, "Vehicle Exit Date", _daterange(filters.get("exit_from"), filters.get("exit_to"))),
 		(8, "Customer", _join(filters.get("customer"))),
 		(9, "Docs status", _join(filters.get("document_review"))),
+		(10, "Document Status", filters.get("docstatus") or ""),
 	]
 	for row_idx, label, value in filter_layout:
 		ws.cell(row=row_idx, column=2, value=label).font = arial10_bold

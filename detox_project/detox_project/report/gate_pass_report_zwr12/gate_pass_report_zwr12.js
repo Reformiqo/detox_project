@@ -74,6 +74,12 @@ frappe.query_reports["Gate Pass Report ZWR12"] = {
 				];
 			},
 		},
+		{
+			fieldname: "docstatus",
+			label: __("Document Status"),
+			fieldtype: "Select",
+			options: "\nDraft\nSubmitted\nCancelled",
+		},
 	],
 
 	onload: function (report) {
