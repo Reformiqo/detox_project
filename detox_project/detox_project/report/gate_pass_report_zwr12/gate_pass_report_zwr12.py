@@ -248,6 +248,16 @@ def get_data(filters):
 			}
 		)
 
+	# ABP2-I404 — Grand Total row (filtered records only). Appears as the
+	# last row in both the report view and the XLSX export (export_zwr12
+	# reuses get_data, so it is included there too).
+	if result:
+		_gt = ["manifest_qty", "qty", "customer_gross_weight",
+			"customer_tare_weight", "customer_net_weight", "company_gross_weight",
+			"company_tare_weight", "company_net_weight", "inward_qty"]
+		total = {f: sum(frappe.utils.flt(r.get(f)) for r in result) for f in _gt}
+		total["customer_name"] = _("Grand Total")
+		result.append(total)
 	return result
 
 
