@@ -80,6 +80,14 @@ frappe.query_reports["Gate Pass Report ZWR12"] = {
 			fieldtype: "Select",
 			options: "\nDraft\nSubmitted\nCancelled",
 		},
+		{
+			// ABP2-I408 — Transaction Type filter; options mirror the
+			// Gate Pass doctype `transaction_type` Select. Blank = all.
+			fieldname: "transaction_type",
+			label: __("Transaction Type"),
+			fieldtype: "Select",
+			options: "\nInbound (Waste Receipt)\nOutbound (Waste Dispatch)",
+		},
 	],
 
 	onload: function (report) {

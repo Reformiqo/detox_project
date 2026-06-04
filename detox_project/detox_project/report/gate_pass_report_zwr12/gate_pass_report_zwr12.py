@@ -298,6 +298,13 @@ def _fetch_gate_passes(filters):
 		conditions.append("gp.customer IN %(customer)s")
 		values["customer"] = tuple(cust)
 
+	# ABP2-I408 — Transaction Type filter. When a value is selected we
+	# restrict to that Gate Pass transaction_type; blank = all (default,
+	# byte-identical to pre-I408 output).
+	if filters.get("transaction_type"):
+		conditions.append("gp.transaction_type = %(transaction_type)s")
+		values["transaction_type"] = filters.transaction_type
+
 	if filters.get("exit_from"):
 		conditions.append("DATE(gp.vehicle_exit_time) >= %(exit_from)s")
 		values["exit_from"] = filters.exit_from
