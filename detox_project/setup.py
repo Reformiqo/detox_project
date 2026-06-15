@@ -20,6 +20,7 @@ def after_migrate():
 	create_fm_property_setters()
 	setup_fm_workflow()
 	unlock_orphaned_fm_child_rows()
+	heal_duplicate_wbs_allocations()  # ABP2-I455
 
 
 FM_CHILD_TABLES = (
@@ -924,6 +925,87 @@ def migrate_wbs_allocations():
 
 		if docs:
 			frappe.db.commit()
+
+
+def heal_duplicate_wbs_allocations():
+	"""ABP2-I455 (Sahil 2026-06-15) — collapse duplicate WBS Allocation
+	rows on existing MR / PO / PI / PR docs.
+
+	Frappe's get_mapped_doc auto-copy (frappe/model/mapper.py:102-118)
+	appends rows from every source doc when "Get Items From" is used
+	to merge multiple MRs into one PO. Pre-fix, duplicates persisted on
+	submitted docs. This heal runs once per after_migrate, deletes
+	duplicate rows by (parent, wbs_element, sub_wbs_element) keeping
+	the lowest-idx row, then re-indexes the surviving rows. Idempotent
+	— second run finds zero duplicates and exits silently.
+
+	Submitted docs ARE modified (direct SQL bypassing docstatus guards)
+	because the row layout in this child table doesn't affect GL
+	entries — `_update_wbs_spent` reads from PO Item / PI Item rows
+	directly, not from custom_wbs_allocations. Cleaning the noise out
+	is safe.
+	"""
+	if not frappe.db.exists("DocType", "WBS Allocation"):
+		return
+
+	# Find every (parenttype, parent, wbs_element, sub_wbs_element) combo
+	# with more than one row. The MIN(name) is the keeper; the others die.
+	dups = frappe.db.sql(
+		"""
+		SELECT parenttype, parent,
+		       COALESCE(wbs_element, '') AS wbs,
+		       COALESCE(sub_wbs_element, '') AS sub_wbs,
+		       MIN(name)  AS keep_name,
+		       COUNT(*)   AS n,
+		       GROUP_CONCAT(name) AS all_names
+		FROM `tabWBS Allocation`
+		WHERE parenttype IN ('Material Request','Purchase Order',
+		                     'Purchase Invoice','Purchase Receipt')
+		GROUP BY parenttype, parent,
+		         COALESCE(wbs_element,''), COALESCE(sub_wbs_element,'')
+		HAVING COUNT(*) > 1
+		""",
+		as_dict=True,
+	)
+
+	if not dups:
+		print("detox_project: heal_duplicate_wbs_allocations — nothing to do.")
+		return
+
+	parents_touched = set()
+	total_deleted = 0
+	for d in dups:
+		all_names = d["all_names"].split(",")
+		victims = [n for n in all_names if n != d["keep_name"]]
+		if not victims:
+			continue
+		placeholders = ",".join(["%s"] * len(victims))
+		frappe.db.sql(
+			f"DELETE FROM `tabWBS Allocation` WHERE name IN ({placeholders})",
+			tuple(victims),
+		)
+		total_deleted += len(victims)
+		parents_touched.add((d["parenttype"], d["parent"]))
+
+	# Re-index surviving rows on every touched parent so the grid is tidy.
+	for parenttype, parent in parents_touched:
+		rows = frappe.db.sql(
+			"""SELECT name FROM `tabWBS Allocation`
+			   WHERE parenttype=%s AND parent=%s
+			   ORDER BY idx, name""",
+			(parenttype, parent),
+		)
+		for new_idx, (row_name,) in enumerate(rows, start=1):
+			frappe.db.set_value(
+				"WBS Allocation", row_name, "idx", new_idx,
+				update_modified=False,
+			)
+
+	frappe.db.commit()
+	print(
+		f"detox_project: heal_duplicate_wbs_allocations — deleted {total_deleted} "
+		f"duplicate row(s) across {len(parents_touched)} parent doc(s)."
+	)
 
 
 def fix_budget_notification():

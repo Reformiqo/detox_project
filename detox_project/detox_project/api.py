@@ -55,8 +55,53 @@ def on_project_update(doc, method):
 			frappe.db.set_value("WBS Element", wbs_name, "status", "Completed")
 
 
+def dedupe_wbs_allocations(doc, method=None):
+	"""ABP2-I455 (Sahil 2026-06-15) — collapse duplicate WBS Allocation rows.
+
+	When a Purchase Order / Purchase Invoice / Purchase Receipt is built via
+	"Get Items From → Material Request" with multiple source MRs, Frappe's
+	get_mapped_doc auto-copies every child table that has the same fieldname
+	+ same child-doctype + no_copy=0 on both source and target (see
+	frappe/model/mapper.py:102-118). `custom_wbs_allocations` matches that
+	rule on MR/PO/PI/PR, so each source MR APPENDS its allocation rows to
+	the target — no dedup. Result: 3 MRs all carrying WBS-004.8 give a PO
+	with 3 identical WBS-004.8 rows.
+
+	Sahil's spec — "each WBS displayed only once unless multiple valid
+	allocations exist" — translates to dedupe by (wbs_element,
+	sub_wbs_element). Rows with the same combo collapse to the first
+	occurrence; rows with the same wbs_element but different sub_wbs_element
+	survive (genuine multi-allocation case).
+
+	Runs in before_validate so the deduped rows are persisted, and downstream
+	validators (validate_*_budget) see the clean list.
+	"""
+	rows = doc.get("custom_wbs_allocations") or []
+	if not rows:
+		return
+
+	seen = set()
+	deduped = []
+	for row in rows:
+		# Empty wbs_element rows are draft skeletons — keep one, drop further empties.
+		key = (row.wbs_element or "", row.sub_wbs_element or "")
+		if key in seen:
+			continue
+		seen.add(key)
+		deduped.append(row)
+
+	if len(deduped) == len(rows):
+		return  # no change
+
+	# Re-index from 1 so the grid stays tidy.
+	for new_idx, row in enumerate(deduped, start=1):
+		row.idx = new_idx
+	doc.set("custom_wbs_allocations", deduped)
+
+
 def validate_material_request_budget(doc, method):
 	"""Soft warning per WBS allocation row if budget nearing limit."""
+	dedupe_wbs_allocations(doc)
 	if not doc.get("custom_wbs_allocations"):
 		return
 
@@ -71,6 +116,7 @@ def validate_material_request_budget(doc, method):
 
 def validate_po_budget(doc, method):
 	"""Hard block per WBS allocation row if budget exceeded."""
+	dedupe_wbs_allocations(doc)
 	if not doc.get("custom_wbs_allocations"):
 		return
 
@@ -81,6 +127,16 @@ def validate_po_budget(doc, method):
 			doc, row.wbs_element, flt(row.allocated_amount),
 			warn_only=False, row_label=row.wbs_element,
 		)
+
+
+def validate_pi_dedupe(doc, method):
+	"""Purchase Invoice has no budget validator, but still needs dedup."""
+	dedupe_wbs_allocations(doc)
+
+
+def validate_pr_dedupe(doc, method):
+	"""Purchase Receipt has no budget validator, but still needs dedup."""
+	dedupe_wbs_allocations(doc)
 
 
 def on_po_submit(doc, method):

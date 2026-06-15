@@ -64,9 +64,11 @@ doc_events = {
 		"on_submit": "detox_project.detox_project.api.on_po_submit",
 	},
 	"Purchase Invoice": {
+		"validate": "detox_project.detox_project.api.validate_pi_dedupe",
 		"on_submit": "detox_project.detox_project.api.on_pi_submit",
 	},
 	"Purchase Receipt": {
+		"validate": "detox_project.detox_project.api.validate_pr_dedupe",
 		"on_submit": "detox_project.detox_project.api.on_pr_submit",
 	},
 	"Tender Management": {
