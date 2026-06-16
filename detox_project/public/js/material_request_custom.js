@@ -103,6 +103,13 @@ function handle_single_wbs_auto_assign(frm) {
 
 // REQ 2: Group item amounts by (wbs_element + sub_wbs_element) → update allocation rows
 function calculate_wbs_allocated_amounts(frm) {
+	// ABP2-I457 (Sahil 2026-06-16) — on Submitted docs allocated_amount
+	// is allow_on_submit=0. The recompute on refresh was producing
+	// IEEE-754 float drift (3267826.12 → 3267826.1199999996), which
+	// then hit the 'Cannot Update After Submit' guard and blocked the
+	// user from opening MR-SRV-2026-00325. Skip entirely once submitted.
+	if (frm.doc.docstatus !== 0) return;
+
 	var allocs = frm.doc.custom_wbs_allocations || [];
 	if (allocs.length === 1 && allocs[0].wbs_element) handle_single_wbs_auto_assign(frm);
 
@@ -115,7 +122,10 @@ function calculate_wbs_allocated_amounts(frm) {
 	allocs.forEach(function (alloc) {
 		var key = (alloc.wbs_element || "") + "||" + (alloc.sub_wbs_element || "");
 		var amt = map[key] || 0;
-		if (flt(alloc.allocated_amount) !== amt) {
+		// ABP2-I457 — half-paise tolerance so micro IEEE-754 drift from
+		// repeated += in JS doesn't mark the row dirty when it hasn't
+		// substantively changed.
+		if (Math.abs(flt(alloc.allocated_amount) - amt) > 0.005) {
 			frappe.model.set_value(alloc.doctype, alloc.name, "allocated_amount", amt);
 		}
 	});

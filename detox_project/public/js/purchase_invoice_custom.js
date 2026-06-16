@@ -89,6 +89,11 @@ function handle_single_wbs_auto_assign_pi(frm) {
 }
 
 function calculate_wbs_allocated_amounts_pi(frm) {
+	// ABP2-I457 (Sahil 2026-06-16) — Submitted-doc allow_on_submit
+	// guard + IEEE-754 drift tolerance. See material_request_custom.js
+	// for the full story.
+	if (frm.doc.docstatus !== 0) return;
+
 	var allocs = frm.doc.custom_wbs_allocations || [];
 	if (allocs.length === 1 && allocs[0].wbs_element) handle_single_wbs_auto_assign_pi(frm);
 	var map = {};
@@ -99,7 +104,7 @@ function calculate_wbs_allocated_amounts_pi(frm) {
 	allocs.forEach(function (alloc) {
 		var key = (alloc.wbs_element || "") + "||" + (alloc.sub_wbs_element || "");
 		var amt = map[key] || 0;
-		if (flt(alloc.allocated_amount) !== amt)
+		if (Math.abs(flt(alloc.allocated_amount) - amt) > 0.005)
 			frappe.model.set_value(alloc.doctype, alloc.name, "allocated_amount", amt);
 	});
 	frm.refresh_field("custom_wbs_allocations");
