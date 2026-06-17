@@ -29,8 +29,12 @@ frappe.ui.form.on("Production Plan", {
 });
 
 frappe.ui.form.on("Detox Production Plan Process", {
-    operation_name(frm) {
+    operation_name(frm, cdt, cdn) {
         _refresh_operation_options(frm);
+        // Phase 7c — auto-add a matching row in Operations & Materials
+        // for this Operation. One Materials row per Operation
+        // (uniqueness enforced).
+        _autosync_process_to_materials(frm, locals[cdt][cdn]);
         _render_operations_breakdown(frm);
     },
     workstation(frm) {
@@ -77,7 +81,11 @@ frappe.ui.form.on("Detox Production Plan Operation", {
     qty_per_unit(frm, cdt, cdn) {
         _recompute_one_multiply_by(frm, locals[cdt][cdn]);
     },
-    operation_name(frm) {
+    operation_name(frm, cdt, cdn) {
+        // Phase 7c — Operation is unique per Materials row. If the
+        // user just picked an Operation that already exists on
+        // another row, clear it and tell them.
+        _enforce_materials_operation_uniqueness(frm, locals[cdt][cdn]);
         _render_operations_breakdown(frm);
     },
     item_code(frm) {
@@ -237,4 +245,51 @@ function _recompute_one_multiply_by(frm, op) {
     if (Math.abs(flt(op.multiply_by) - want) > 0.0001) {
         frappe.model.set_value(op.doctype, op.name, "multiply_by", want);
     }
+}
+
+// Phase 7c — when a Process row gets an Operation, mirror it into a
+// fresh row in Operations & Materials so the user doesn't have to add
+// it twice. Skip if a Materials row already references the same
+// Operation (uniqueness rule).
+function _autosync_process_to_materials(frm, proc_row) {
+    if (!proc_row || !proc_row.operation_name) return;
+    const op = proc_row.operation_name;
+    const already = (frm.doc.custom_operations || []).some(
+        r => r.operation_name === op
+    );
+    if (already) return;
+    const new_row = frappe.model.add_child(frm.doc, "Detox Production Plan Operation", "custom_operations");
+    new_row.operation_name = op;
+    // Carry CC + Project down from the header to save a trip; user can override.
+    if (frm.doc.custom_cost_center && !new_row.cost_center) {
+        new_row.cost_center = frm.doc.custom_cost_center;
+    }
+    if (frm.doc.project && !new_row.project) {
+        new_row.project = frm.doc.project;
+    }
+    frm.refresh_field("custom_operations");
+    frappe.show_alert({
+        message: __("Auto-added Operations & Materials row for {0}.", [op]),
+        indicator: "blue",
+    });
+}
+
+// Phase 7c — Operation is unique in the Materials table. If a row's
+// operation_name already exists on another row, clear it.
+function _enforce_materials_operation_uniqueness(frm, row) {
+    if (!row || !row.operation_name) return;
+    const op = row.operation_name;
+    const dupes = (frm.doc.custom_operations || []).filter(
+        r => r.operation_name === op && r.name !== row.name
+    );
+    if (dupes.length === 0) return;
+    frappe.model.set_value(row.doctype, row.name, "operation_name", "");
+    frappe.msgprint({
+        title: __("Operation already used"),
+        message: __(
+            "Operation '{0}' is already on another Operations & Materials row. " +
+            "Each Operation may appear only once here.", [op]
+        ),
+        indicator: "orange",
+    });
 }

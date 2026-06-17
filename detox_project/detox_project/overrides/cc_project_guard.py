@@ -35,6 +35,9 @@ PP_CC_FIELD = "custom_cost_center"
 def validate_production_plan(doc, method=None):
     """VAL-01 + VAL-02 — header CC + Project mandatory; copy header CC/Project
     to blank rows in custom_fg_items + custom_operations; throw if still blank.
+
+    Phase 7c addition: enforce Operation uniqueness on custom_operations —
+    each Operation may appear at most once in the Materials table.
     """
     header_cc = doc.get(PP_CC_FIELD)
     header_pj = doc.get("project")
@@ -42,6 +45,26 @@ def validate_production_plan(doc, method=None):
 
     for table_field in ("custom_fg_items", "custom_operations"):
         _check_rows(doc, table_field, header_cc, header_pj, "Production Plan")
+
+    _check_operation_uniqueness(doc)
+
+
+def _check_operation_uniqueness(doc) -> None:
+    """Phase 7c (Sahil 2026-06-17) — Operation column is unique per row
+    in custom_operations. Two rows with the same Operation are rejected."""
+    seen: dict[str, int] = {}
+    for idx, row in enumerate(doc.get("custom_operations") or [], start=1):
+        op = (row.get("operation_name") or "").strip()
+        if not op:
+            continue
+        if op in seen:
+            frappe.throw(
+                _("Operation '{0}' appears on rows #{1} and #{2} of "
+                  "Operations & Materials. Each Operation may appear only "
+                  "once.").format(op, seen[op], idx),
+                title=_("Duplicate Operation"),
+            )
+        seen[op] = idx
 
 
 # --------------------------------------------------------------------------
