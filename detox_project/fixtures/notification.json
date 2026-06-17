@@ -12,7 +12,7 @@
   "docstatus": 0,
   "doctype": "Notification",
   "document_type": "WBS Element",
-  "enabled": 1,
+  "enabled": 0,
   "event": "Value Change",
   "filters": null,
   "from_attach_field": null,

@@ -26,6 +26,7 @@ def after_migrate():
 	setup_phase2_cc_project_enforcement()  # ABP2-I419 Phase 2
 	setup_phase3_stock_entry_manufacture()  # ABP2-I419 Phase 3
 	setup_phase4_subcontracting()  # ABP2-I419 Phase 4
+	setup_phase5_print_format()  # ABP2-I419 Phase 5
 
 
 FM_CHILD_TABLES = (
@@ -1803,3 +1804,216 @@ def setup_phase4_subcontracting():
 		f"detox_project: setup_phase4_subcontracting — "
 		f"{created} Custom Field(s) upserted."
 	)
+
+
+# ---------------------------------------------------------------------------
+# ABP2-I419 Phase 5 — Reports + Print Format + Scheduler
+# (FR-26..27, FR-34..35, RPT-01..02)
+# ---------------------------------------------------------------------------
+def setup_phase5_print_format():
+	"""Upsert the Production Day Summary print format (FR-35).
+	Jinja-only — no Python. Bound to Stock Entry."""
+	name = "Production Day Summary"
+	if not frappe.db.exists("DocType", "Stock Entry"):
+		return
+	html = _production_day_summary_html()
+	if frappe.db.exists("Print Format", name):
+		pf = frappe.get_doc("Print Format", name)
+		dirty = False
+		fields = {
+			"doc_type": "Stock Entry",
+			"module": "Detox Project",
+			"html": html,
+			"standard": "Yes",
+			"custom_format": 1,
+			"print_format_type": "Jinja",
+		}
+		for k, v in fields.items():
+			if pf.get(k) != v:
+				pf.set(k, v); dirty = True
+		if dirty:
+			pf.save(ignore_permissions=True)
+		return
+	frappe.get_doc({
+		"doctype": "Print Format",
+		"name": name,
+		"doc_type": "Stock Entry",
+		"module": "Detox Project",
+		"html": html,
+		"standard": "Yes",
+		"custom_format": 1,
+		"print_format_type": "Jinja",
+	}).insert(ignore_permissions=True)
+	print(f"detox_project: setup_phase5_print_format — '{name}' upserted.")
+
+
+def _production_day_summary_html() -> str:
+	return """<div style="font-family:Helvetica,Arial,sans-serif;">
+<h2 style="margin:0">Production Day Summary</h2>
+<p style="margin:0 0 10px 0;color:#666">{{ doc.name }} &mdash; {{ doc.posting_date }} {{ doc.posting_time or '' }}</p>
+
+<table style="width:100%;border-collapse:collapse;margin-bottom:15px">
+  <tr>
+    <td style="padding:4px 8px;border:1px solid #ddd"><b>Production Plan</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.production_plan or '-' }}</td>
+    <td style="padding:4px 8px;border:1px solid #ddd"><b>Process</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.get("custom_process_selection") or '-' }}</td>
+  </tr>
+  <tr>
+    <td style="padding:4px 8px;border:1px solid #ddd"><b>Cost Center</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.get("custom_cost_center") or doc.cost_center or '-' }}</td>
+    <td style="padding:4px 8px;border:1px solid #ddd"><b>Project</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.project or '-' }}</td>
+  </tr>
+  <tr>
+    <td style="padding:4px 8px;border:1px solid #ddd"><b>Production Time</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.get("custom_production_time") or '-' }} {{ doc.get("custom_time_uom") or '' }}</td>
+    <td style="padding:4px 8px;border:1px solid #ddd"><b>From Warehouse</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.from_warehouse or '-' }}</td>
+  </tr>
+</table>
+
+<h3 style="margin:10px 0">Materials Consumed</h3>
+<table style="width:100%;border-collapse:collapse">
+  <thead style="background:#f5f5f5">
+    <tr>
+      <th style="padding:4px 8px;border:1px solid #ddd;text-align:left">Item</th>
+      <th style="padding:4px 8px;border:1px solid #ddd;text-align:right">Qty</th>
+      <th style="padding:4px 8px;border:1px solid #ddd">UOM</th>
+      <th style="padding:4px 8px;border:1px solid #ddd;text-align:right">Rate</th>
+      <th style="padding:4px 8px;border:1px solid #ddd;text-align:right">Amount</th>
+      <th style="padding:4px 8px;border:1px solid #ddd">PO</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in doc.items %}
+    {% if r.s_warehouse %}
+    <tr>
+      <td style="padding:4px 8px;border:1px solid #ddd">{{ r.item_code }} &mdash; {{ r.item_name }}</td>
+      <td style="padding:4px 8px;border:1px solid #ddd;text-align:right">{{ "{:.2f}".format(r.qty or 0) }}</td>
+      <td style="padding:4px 8px;border:1px solid #ddd">{{ r.uom }}</td>
+      <td style="padding:4px 8px;border:1px solid #ddd;text-align:right">{{ "{:.2f}".format(r.basic_rate or 0) }}</td>
+      <td style="padding:4px 8px;border:1px solid #ddd;text-align:right">{{ "{:.2f}".format(r.amount or 0) }}</td>
+      <td style="padding:4px 8px;border:1px solid #ddd">{{ r.get("custom_purchase_order") or '-' }}</td>
+    </tr>
+    {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+
+<h3 style="margin:10px 0">Finished Goods Produced</h3>
+<table style="width:100%;border-collapse:collapse">
+  <thead style="background:#f5f5f5">
+    <tr>
+      <th style="padding:4px 8px;border:1px solid #ddd;text-align:left">Item</th>
+      <th style="padding:4px 8px;border:1px solid #ddd;text-align:right">Qty</th>
+      <th style="padding:4px 8px;border:1px solid #ddd">UOM</th>
+      <th style="padding:4px 8px;border:1px solid #ddd">Warehouse</th>
+      <th style="padding:4px 8px;border:1px solid #ddd">Serial / Batch</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in doc.items %}
+    {% if r.t_warehouse and not r.s_warehouse %}
+    <tr>
+      <td style="padding:4px 8px;border:1px solid #ddd">{{ r.item_code }} &mdash; {{ r.item_name }}</td>
+      <td style="padding:4px 8px;border:1px solid #ddd;text-align:right">{{ "{:.2f}".format(r.qty or 0) }}</td>
+      <td style="padding:4px 8px;border:1px solid #ddd">{{ r.uom }}</td>
+      <td style="padding:4px 8px;border:1px solid #ddd">{{ r.t_warehouse }}</td>
+      <td style="padding:4px 8px;border:1px solid #ddd">{{ r.serial_no or r.batch_no or '-' }}</td>
+    </tr>
+    {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+
+<table style="width:100%;margin-top:30px">
+  <tr>
+    <td style="width:33%;text-align:center;border-top:1px solid #999;padding-top:5px">Operator</td>
+    <td style="width:33%;text-align:center;border-top:1px solid #999;padding-top:5px">QC</td>
+    <td style="width:33%;text-align:center;border-top:1px solid #999;padding-top:5px">Supervisor</td>
+  </tr>
+</table>
+</div>"""
+
+
+# ---------------------------------------------------------------------------
+# Overdue Production Plan alert — scheduler (FR-34, L18)
+# ---------------------------------------------------------------------------
+def overdue_production_plan_alert():
+	"""Daily scheduled job: find submitted Production Plans whose
+	custom_fg_items.planned_date has passed with no linked Manufacture
+	Stock Entry, and notify the Production Manager role."""
+	import datetime
+	today_date = frappe.utils.today()
+
+	# Plans with at least one FG row whose planned_date < today and no
+	# Manufacture SE submitted against the plan in the last day. In v16
+	# Stock Entry links Production Plan via its Work Order.
+	rows = frappe.db.sql(
+		"""
+		SELECT pp.name AS plan_name, fg.item_code, fg.qty_to_manufacture,
+		       fg.planned_date,
+		       DATEDIFF(%(today)s, fg.planned_date) AS days_overdue
+		FROM `tabProduction Plan` pp
+		INNER JOIN `tabDetox Production Plan FG` fg ON fg.parent = pp.name
+		          AND fg.parenttype = 'Production Plan'
+		WHERE pp.docstatus = 1
+		  AND pp.custom_no_bom = 1
+		  AND fg.planned_date < %(today)s
+		  AND COALESCE(fg.custom_total_produced, 0) < fg.qty_to_manufacture
+		  AND NOT EXISTS (
+		      SELECT 1 FROM `tabStock Entry` se
+		      INNER JOIN `tabWork Order` wo ON wo.name = se.work_order
+		      WHERE wo.production_plan = pp.name
+		        AND se.docstatus = 1
+		        AND se.stock_entry_type = 'Manufacture'
+		        AND se.modified >= DATE_SUB(%(today)s, INTERVAL 1 DAY)
+		  )
+		ORDER BY pp.name, fg.idx
+		""",
+		{"today": today_date}, as_dict=True,
+	)
+	if not rows:
+		return
+
+	# Email + system notification to anyone with the Manufacturing Manager role.
+	users = [u.parent for u in frappe.get_all(
+		"Has Role", filters={"role": "Manufacturing Manager"},
+		fields=["parent"]) if u.parent != "Administrator"]
+
+	by_plan: dict[str, list] = {}
+	for r in rows:
+		by_plan.setdefault(r.plan_name, []).append(r)
+
+	html_rows = []
+	for plan, fgs in by_plan.items():
+		for r in fgs:
+			pending = float(r.qty_to_manufacture) - 0
+			html_rows.append(
+				f"<tr><td>{plan}</td><td>{r.item_code}</td>"
+				f"<td>{r.qty_to_manufacture}</td>"
+				f"<td>{r.planned_date}</td>"
+				f"<td>{r.days_overdue}</td></tr>"
+			)
+	body = (
+		"<h3>Overdue Production Plans</h3>"
+		"<table border='1' cellpadding='4' style='border-collapse:collapse'>"
+		"<tr><th>Plan</th><th>Item</th><th>Qty</th><th>Planned Date</th><th>Days Overdue</th></tr>"
+		+ "".join(html_rows) + "</table>"
+	)
+	if users:
+		try:
+			frappe.sendmail(
+				recipients=users,
+				subject=f"[Detox] {len(by_plan)} Production Plan(s) overdue",
+				message=body,
+			)
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				"detox_project: overdue_production_plan_alert email failed",
+			)
+	# Always log a system notification for desk users.
+	for u in users:
+		frappe.get_doc({
+			"doctype": "Notification Log",
+			"subject": f"{len(by_plan)} Production Plan(s) overdue",
+			"email_content": body,
+			"for_user": u,
+			"type": "Alert",
+		}).insert(ignore_permissions=True)

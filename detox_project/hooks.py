@@ -17,6 +17,8 @@ fixtures = [
 	{"dt": "Property Setter", "filters": [["module", "=", "Detox Project"]]},
 	{"dt": "Workflow", "filters": [["name", "in", ["Project Approval Workflow", "Financial Model Approval Workflow"]]]},
 	{"dt": "Notification", "filters": [["module", "=", "Detox Project"]]},
+	# ABP2-I419 Phase 5 — ship the Production Day Summary print format.
+	{"dt": "Print Format", "filters": [["module", "=", "Detox Project"]]},
 ]
 
 # --------------------------------------------------------------------------
@@ -122,6 +124,8 @@ doc_events = {
 scheduler_events = {
 	"daily": [
 		"detox_project.detox_project.api.send_budget_alerts",
+		# ABP2-I419 Phase 5 — overdue Production Plan alert.
+		"detox_project.setup.overdue_production_plan_alert",
 	],
 }
 
