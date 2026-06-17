@@ -32,11 +32,10 @@
    "reqd": 1
   },
   {
-   "columns": 2,
    "fieldname": "operation_seq",
    "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Seq"
+   "label": "Sequence",
+   "description": "Optional ordering hint for this operation."
   }
  ],
  "istable": 1,
