@@ -82,6 +82,20 @@ doc_events = {
 		"on_update": "detox_project.events.tender.on_update",
 		"before_cancel": "detox_project.events.tender.before_cancel",
 	},
+	# ABP2-I419 Phase 2 — CC + Project mandatory + cascade across the
+	# manufacturing chain. Single shared guard in
+	# detox_project.detox_project.overrides.cc_project_guard.
+	"Production Plan": {
+		"validate": "detox_project.detox_project.overrides.cc_project_guard.validate_production_plan",
+		"on_submit": "detox_project.detox_project.overrides.cc_project_guard.cascade_pp_to_work_orders",
+	},
+	"Work Order": {
+		"validate": "detox_project.detox_project.overrides.cc_project_guard.validate_work_order",
+	},
+	"Stock Entry": {
+		"before_save": "detox_project.detox_project.overrides.cc_project_guard.inherit_se_from_work_order",
+		"validate": "detox_project.detox_project.overrides.cc_project_guard.validate_stock_entry",
+	},
 }
 
 # --------------------------------------------------------------------------

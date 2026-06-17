@@ -1,0 +1,189 @@
+# ABP2-I419 Phase 2 (Sahil 2026-06-17, Out of BRD) — Cost Center + Project
+# mandatory-everywhere guard + Production Plan -> Work Order cascade.
+# See the FRD's Functional Requirements (FR-22..25), Process Logic L05..06
+# and Validations VAL-01, VAL-02, VAL-06, VAL-07.
+#
+# Hook surface (wired in hooks.py):
+#   Production Plan:
+#     validate    -> validate_production_plan
+#     on_submit   -> cascade_pp_to_work_orders
+#   Work Order:
+#     validate    -> validate_work_order
+#   Stock Entry:
+#     before_save -> inherit_from_work_order   (defaults header/rows)
+#     validate    -> validate_stock_entry
+#
+# All three validate_* funcs share the same shape: check header cost_center
+# + project, then for every item-row table copy header values down to blank
+# cells, then throw if anything is still blank. Single source of truth so
+# 'mandatory everywhere' is guaranteed by one piece of logic
+# (FRD Validations sheet implementation note).
+
+from __future__ import annotations
+
+import frappe
+from frappe import _
+
+
+# Column on Production Plan that holds the No-BOM Cost Center (added in Phase 1).
+PP_CC_FIELD = "custom_cost_center"
+
+
+# --------------------------------------------------------------------------
+# Production Plan
+# --------------------------------------------------------------------------
+def validate_production_plan(doc, method=None):
+    """VAL-01 + VAL-02 — header CC + Project mandatory; copy header CC/Project
+    to blank rows in custom_fg_items + custom_operations; throw if still blank.
+    """
+    header_cc = doc.get(PP_CC_FIELD)
+    header_pj = doc.get("project")
+    _check_header(doc, header_cc, header_pj, "Production Plan")
+
+    for table_field in ("custom_fg_items", "custom_operations"):
+        _check_rows(doc, table_field, header_cc, header_pj, "Production Plan")
+
+
+# --------------------------------------------------------------------------
+# Work Order
+# --------------------------------------------------------------------------
+def validate_work_order(doc, method=None):
+    """VAL-06 — header cost_center + project mandatory on Work Order."""
+    header_cc = doc.get("custom_cost_center") or doc.get("cost_center")
+    header_pj = doc.get("project")
+    _check_header(doc, header_cc, header_pj, "Work Order")
+
+    # WO Item rows (required_items) — copy header CC/Project to blank cells.
+    for table_field in ("required_items", "operations"):
+        if not doc.get(table_field):
+            continue
+        _check_rows(doc, table_field, header_cc, header_pj, "Work Order")
+
+
+# --------------------------------------------------------------------------
+# Stock Entry
+# --------------------------------------------------------------------------
+def validate_stock_entry(doc, method=None):
+    """VAL-07 — header cost_center + project mandatory on Stock Entry."""
+    if not _stock_entry_is_in_scope(doc):
+        return
+    header_cc = doc.get("custom_cost_center") or doc.get("cost_center")
+    header_pj = doc.get("project")
+    _check_header(doc, header_cc, header_pj, "Stock Entry")
+
+    _check_rows(doc, "items", header_cc, header_pj, "Stock Entry")
+
+
+def _stock_entry_is_in_scope(doc) -> bool:
+    """Phase 2 enforcement applies to Manufacturing-flow SEs.
+    Standard Material Issue / Receipt / Repack created OUTSIDE the plan
+    keep their existing Detox WM enforcement; we don't double-fire here
+    on Material Receipt (Opening) and similar internal flows that have
+    no Production Plan context.
+    """
+    purpose = (doc.get("stock_entry_type") or "").strip()
+    if not purpose:
+        return False
+    return purpose in {
+        "Manufacture",
+        "Material Transfer for Manufacture",
+        "Repack",
+        "Send to Subcontractor",
+    }
+
+
+# --------------------------------------------------------------------------
+# Before-save inheritance: SE pulls CC + Project from its Work Order
+# (L06 — WO's CC + Project become defaults on its Stock Entries).
+# --------------------------------------------------------------------------
+def inherit_se_from_work_order(doc, method=None):
+    if not _stock_entry_is_in_scope(doc):
+        return
+    wo_name = doc.get("work_order")
+    if not wo_name or not frappe.db.exists("Work Order", wo_name):
+        return
+    wo = frappe.db.get_value(
+        "Work Order", wo_name,
+        ["project", "custom_cost_center", "cost_center"],
+        as_dict=True,
+    ) or {}
+    wo_cc = wo.get("custom_cost_center") or wo.get("cost_center")
+    wo_pj = wo.get("project")
+    if wo_pj and not doc.get("project"):
+        doc.project = wo_pj
+    if wo_cc:
+        # Stock Entry's CC field is added as a Custom Field in setup; tolerate
+        # whichever fieldname (custom_cost_center or cost_center) the bench has.
+        if doc.meta.get_field("custom_cost_center") and not doc.get("custom_cost_center"):
+            doc.custom_cost_center = wo_cc
+        if doc.meta.get_field("cost_center") and not doc.get("cost_center"):
+            doc.cost_center = wo_cc
+
+
+# --------------------------------------------------------------------------
+# Production Plan on_submit cascade -> Work Order (L05)
+# --------------------------------------------------------------------------
+def cascade_pp_to_work_orders(doc, method=None):
+    """L05 — when a Production Plan is submitted, stamp its
+    custom_cost_center + project onto every Work Order already
+    generated from this plan.
+
+    Work Orders may be created EITHER from the standard 'Create Work
+    Order' flow on the plan, OR later from the same plan. We update
+    only those whose docstatus < 2 (not cancelled) so we don't disturb
+    cancelled history.
+    """
+    header_cc = doc.get(PP_CC_FIELD)
+    header_pj = doc.get("project")
+    if not (header_cc or header_pj):
+        return
+
+    work_orders = frappe.db.sql(
+        """SELECT name FROM `tabWork Order`
+           WHERE production_plan = %s AND docstatus < 2""",
+        doc.name, as_dict=True,
+    )
+    updates: dict[str, str | None] = {}
+    if header_cc:
+        updates["custom_cost_center"] = header_cc
+    if header_pj:
+        updates["project"] = header_pj
+    if not updates:
+        return
+
+    for wo in work_orders:
+        frappe.db.set_value("Work Order", wo.name, updates, update_modified=False)
+
+
+# --------------------------------------------------------------------------
+# Shared helpers
+# --------------------------------------------------------------------------
+def _check_header(doc, cc, pj, label: str) -> None:
+    missing = []
+    if not cc:
+        missing.append("Cost Center")
+    if not pj:
+        missing.append("Project")
+    if missing:
+        verb = "are" if len(missing) > 1 else "is"
+        frappe.throw(
+            _("{0} {1} mandatory on the {2}.").format(
+                " and ".join(missing), verb, label
+            ),
+            title=_("Cost Center / Project missing"),
+        )
+
+
+def _check_rows(doc, table_field: str, header_cc, header_pj, label: str) -> None:
+    rows = doc.get(table_field) or []
+    for idx, row in enumerate(rows, start=1):
+        if not row.get("cost_center") and header_cc:
+            row.cost_center = header_cc
+        if not row.get("project") and header_pj:
+            row.project = header_pj
+        if not row.get("cost_center") or not row.get("project"):
+            frappe.throw(
+                _("Row #{0}: Cost Center and Project are mandatory on every "
+                  "{1} row.").format(idx, label),
+                title=_("Cost Center / Project missing"),
+            )

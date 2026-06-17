@@ -23,6 +23,7 @@ def after_migrate():
 	heal_duplicate_wbs_allocations()  # ABP2-I455
 	heal_wbs_budget_spent()  # ABP2-I439
 	setup_production_plan_no_bom()  # ABP2-I419 Phase 1
+	setup_phase2_cc_project_enforcement()  # ABP2-I419 Phase 2
 
 
 FM_CHILD_TABLES = (
@@ -1416,4 +1417,143 @@ def setup_production_plan_no_bom():
 	print(
 		f"detox_project: setup_production_plan_no_bom — "
 		f"{created_or_updated} Custom Field(s) upserted."
+	)
+
+
+# ---------------------------------------------------------------------------
+# ABP2-I419 Phase 2 — CC + Project mandatory across the manufacturing
+# document chain (FR-22..25, VAL-01..02, VAL-06..07, VAL-17)
+# ---------------------------------------------------------------------------
+def setup_phase2_cc_project_enforcement():
+	"""Adds the gaps detox_waste_management's enforcement skipped:
+
+	  - Stock Entry header.cost_center (Custom Field; the standard SE
+	    has none).
+	  - Work Order.custom_cost_center (Custom Field, header CC).
+	  - Work Order Item.cost_center + .project (Custom Fields).
+	  - Property Setter: Work Order.project reqd=1.
+	  - Property Setter: Purchase Order Item.cost_center reqd=1 + project reqd=1.
+	  - Property Setter: Purchase Receipt Item.cost_center reqd=1 + project reqd=1.
+
+	The validate hook + cascade hook in
+	detox_project.detox_project.overrides.cc_project_guard wire to
+	these via hooks.py.
+
+	Idempotent.
+	"""
+	custom_fields = [
+		# Stock Entry header — CC (FR-22, the only target detox_waste_management's
+		# enforcer skipped because the native field is absent).
+		{
+			"dt": "Stock Entry",
+			"fieldname": "custom_cost_center",
+			"label": "Cost Center",
+			"fieldtype": "Link",
+			"options": "Cost Center",
+			"insert_after": "project",
+			"reqd": 1,
+			"description": (
+				"Header Cost Center for Manufacturing-flow Stock Entries. "
+				"Inherited from the linked Work Order when present (L06)."
+			),
+		},
+		# Work Order header — CC (no native field on Work Order).
+		{
+			"dt": "Work Order",
+			"fieldname": "custom_cost_center",
+			"label": "Cost Center",
+			"fieldtype": "Link",
+			"options": "Cost Center",
+			"insert_after": "project",
+			"reqd": 1,
+			"description": (
+				"Header Cost Center. Cascaded from the Production Plan on "
+				"submit (L05); stamped onto generated Stock Entries (L06)."
+			),
+		},
+		# Work Order Item — CC + Project (no native fields on Work Order Item).
+		{
+			"dt": "Work Order Item",
+			"fieldname": "cost_center",
+			"label": "Cost Center",
+			"fieldtype": "Link",
+			"options": "Cost Center",
+			"insert_after": "item_name",
+			"reqd": 1,
+		},
+		{
+			"dt": "Work Order Item",
+			"fieldname": "project",
+			"label": "Project",
+			"fieldtype": "Link",
+			"options": "Project",
+			"insert_after": "cost_center",
+			"reqd": 1,
+		},
+	]
+	created = 0
+	for spec in custom_fields:
+		dt = spec["dt"]
+		if not frappe.db.exists("DocType", dt):
+			continue
+		name = f"{dt}-{spec['fieldname']}"
+		spec = {**spec, "module": "Detox Project"}
+		if frappe.db.exists("Custom Field", name):
+			cf = frappe.get_doc("Custom Field", name)
+			dirty = False
+			for k, v in spec.items():
+				if k == "dt":
+					continue
+				if (cf.get(k) or "") != (v or ""):
+					cf.set(k, v)
+					dirty = True
+			if dirty:
+				cf.save(ignore_permissions=True)
+				created += 1
+			continue
+		frappe.get_doc({"doctype": "Custom Field", **spec}).insert(ignore_permissions=True)
+		created += 1
+
+	# Property Setters — bring everything to reqd=1 across the chain.
+	property_setters = [
+		# Work Order
+		("Work Order-project-reqd", "Work Order", "project", "reqd", "Check", "1"),
+		# Purchase Order Item — make item-level CC + Project mandatory (FR-22, VAL-17).
+		("Purchase Order Item-cost_center-reqd", "Purchase Order Item", "cost_center", "reqd", "Check", "1"),
+		("Purchase Order Item-project-reqd", "Purchase Order Item", "project", "reqd", "Check", "1"),
+		# Purchase Receipt Item — same.
+		("Purchase Receipt Item-cost_center-reqd", "Purchase Receipt Item", "cost_center", "reqd", "Check", "1"),
+		("Purchase Receipt Item-project-reqd", "Purchase Receipt Item", "project", "reqd", "Check", "1"),
+	]
+	for ps_name, dt, field, prop, ptype, value in property_setters:
+		if not frappe.db.exists("DocType", dt):
+			continue
+		if frappe.db.exists("Property Setter", ps_name):
+			ps = frappe.get_doc("Property Setter", ps_name)
+			if ps.value != value:
+				ps.value = value
+				ps.save(ignore_permissions=True)
+			continue
+		frappe.get_doc({
+			"doctype": "Property Setter",
+			"name": ps_name,
+			"doctype_or_field": "DocField",
+			"doc_type": dt,
+			"field_name": field,
+			"property": prop,
+			"property_type": ptype,
+			"value": value,
+			"module": "Detox Project",
+		}).insert(ignore_permissions=True)
+
+	for dt in ("Stock Entry", "Work Order", "Work Order Item",
+	           "Purchase Order Item", "Purchase Receipt Item"):
+		try:
+			frappe.clear_cache(doctype=dt)
+		except Exception:
+			pass
+
+	print(
+		f"detox_project: setup_phase2_cc_project_enforcement — "
+		f"{created} Custom Field(s) upserted."
 	)
