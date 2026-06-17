@@ -1633,10 +1633,30 @@ def setup_phase3_stock_entry_manufacture():
 			"fieldname": "custom_process_section",
 			"label": "Manufacturing Process",
 			"fieldtype": "Section Break",
-			"insert_after": "custom_cost_center",
+			# Sahil Image #19 — surface Process + Production Plan directly
+			# beneath Posting Time so the user sees the plan linkage where
+			# they expect it. (Was previously buried under custom_cost_center.)
+			"insert_after": "posting_time",
 			"depends_on": (
 				"eval:[\"Manufacture\",\"Material Transfer for Manufacture\","
 				"\"Repack\"].includes(doc.stock_entry_type)"
+			),
+		},
+		# Sahil Image #19 — Stock Entry has no native production_plan
+		# Link; add it as the first field in the new section so the user
+		# can pick which plan this SE is recording production against.
+		# The Phase 3 client script reads frm.doc.production_plan to
+		# populate the Process dropdown's options from the plan's Table 2.
+		{
+			"dt": "Stock Entry",
+			"fieldname": "production_plan",
+			"label": "Production Plan",
+			"fieldtype": "Link",
+			"options": "Production Plan",
+			"insert_after": "custom_process_section",
+			"description": (
+				"Source Production Plan. Set automatically when the SE is "
+				"created via 'Create > Stock Entry' on a submitted plan."
 			),
 		},
 		{
@@ -1644,7 +1664,7 @@ def setup_phase3_stock_entry_manufacture():
 			"fieldname": "custom_process_selection",
 			"label": "Process",
 			"fieldtype": "Select",
-			"insert_after": "custom_process_section",
+			"insert_after": "production_plan",
 			"options": "",
 			"description": (
 				"Operation from the linked Production Plan. Picking one "
