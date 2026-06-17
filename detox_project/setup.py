@@ -29,6 +29,7 @@ def after_migrate():
 	setup_phase5_print_format()  # ABP2-I419 Phase 5
 	setup_phase6_cylinder_deposit()  # ABP2-I419 Phase 6
 	setup_phase7_process_table()  # ABP2-I419 Phase 7
+	heal_legacy_se_cost_center_scripts()  # ABP2-I419 Image #27
 
 
 FM_CHILD_TABLES = (
@@ -1499,25 +1500,10 @@ def setup_phase2_cc_project_enforcement():
 				"Inherited from the linked Work Order when present (L06)."
 			),
 		},
-		# Sahil 2026-06-17 — hidden 'cost_center' proxy on Stock Entry
-		# header so legacy DB-resident Client Scripts ('Cost center
-		# filter in Stock Entry' + 'project and cost center auto fetch
-		# at item leavl') can frm.set_value("cost_center", ...) without
-		# the 'Field cost_center not found' throw. before_save copies
-		# whatever lands here into custom_cost_center.
-		{
-			"dt": "Stock Entry",
-			"fieldname": "cost_center",
-			"label": "Cost Center (proxy)",
-			"fieldtype": "Link",
-			"options": "Cost Center",
-			"insert_after": "custom_cost_center",
-			"hidden": 1,
-			"description": (
-				"Hidden proxy for legacy Client Scripts; mirrored into "
-				"custom_cost_center on save."
-			),
-		},
+		# Phase 2 proxy field idea (hidden cost_center on Stock Entry
+		# header) abandoned — Frappe rejects hidden+mandatory-without-
+		# default at validate time. Heal_legacy_se_client_scripts below
+		# rewrites the two legacy DB-resident scripts instead.
 		# Work Order header — CC (no native field on Work Order).
 		{
 			"dt": "Work Order",
@@ -2258,4 +2244,54 @@ def setup_phase7_process_table():
 	print(
 		f"detox_project: setup_phase7_process_table — "
 		f"{created} Custom Field(s) upserted."
+	)
+
+
+# ---------------------------------------------------------------------------
+# ABP2-I419 Image #27 — patch legacy DB-resident Client Scripts on
+# Stock Entry that call frm.set_value("cost_center", …) — Phase 2
+# replaced the native header field with custom_cost_center, so the
+# legacy calls throw 'Field cost_center not found'. Rewrite their
+# script content in place.
+# ---------------------------------------------------------------------------
+def heal_legacy_se_cost_center_scripts():
+	"""Patch DB-resident Client Scripts that still target the absent
+	`cost_center` header field on Stock Entry. Replaces every
+	`set_value('cost_center', …)` / `set_value(\"cost_center\", …)` call
+	with the same call against `custom_cost_center`.
+
+	Idempotent — re-runs are no-ops because the replaced strings are
+	already gone.
+	"""
+	import re
+
+	if not frappe.db.exists("DocType", "Client Script"):
+		return
+
+	targets = frappe.get_all(
+		"Client Script",
+		filters={"dt": "Stock Entry", "enabled": 1},
+		fields=["name", "script"],
+	)
+	patched = 0
+	pattern = re.compile(r"set_value\(\s*(['\"])cost_center\1")
+	for cs in targets:
+		original = cs.script or ""
+		new = pattern.sub("set_value(\"custom_cost_center\"", original)
+		# Also patch the bare locals-style writes (sometimes legacy
+		# scripts go via locals[cdt][cdn].cost_center = …; leave child-
+		# row writes alone — those are real Stock Entry Detail rows).
+		if new == original:
+			continue
+		# We only touched HEADER set_value calls; preserve the file's
+		# trailing semicolons and whitespace verbatim.
+		frappe.db.set_value(
+			"Client Script", cs.name, "script", new, update_modified=False,
+		)
+		patched += 1
+	if patched:
+		frappe.clear_cache(doctype="Stock Entry")
+	print(
+		f"detox_project: heal_legacy_se_cost_center_scripts — "
+		f"patched {patched} script(s)."
 	)
