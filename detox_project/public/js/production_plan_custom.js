@@ -215,9 +215,10 @@ const _MAT_FIELDS = [
     {fieldname: "service_item", label: __("Service Item"), fieldtype: "Link",
      options: "Item", depends_on: "is_subcontracted",
      mandatory_depends_on: "eval:doc.is_subcontracted"},
+    // Service PO is OPTIONAL on subcontracted rows (Sahil 2026-06-17 Image #13).
+    // The user can attach the Service PO later once it's raised.
     {fieldname: "service_po", label: __("Service PO"), fieldtype: "Link",
-     options: "Purchase Order", depends_on: "is_subcontracted",
-     mandatory_depends_on: "eval:doc.is_subcontracted"},
+     options: "Purchase Order", depends_on: "is_subcontracted"},
     {fieldname: "return_item", label: __("Return Item"), fieldtype: "Link",
      options: "Item", depends_on: "is_subcontracted",
      mandatory_depends_on: "eval:doc.is_subcontracted"},
@@ -409,6 +410,19 @@ function _open_material_dialog(frm, opName, existing_row) {
             d.hide();
         },
     });
+
+    // Item Code → fetch Item.stock_uom into Standard UOM. Dialog fields
+    // don't honour the docfield-level `fetch_from`; do it explicitly.
+    if (d.fields_dict.item_code) {
+        d.fields_dict.item_code.df.onchange = () => {
+            const code = d.get_value("item_code");
+            if (!code) return;
+            frappe.db.get_value("Item", code, "stock_uom").then(r => {
+                const uom = r && r.message && r.message.stock_uom;
+                if (uom) d.set_value("standard_uom", uom);
+            });
+        };
+    }
 
     // Pre-fill values.
     if (existing_row) {
