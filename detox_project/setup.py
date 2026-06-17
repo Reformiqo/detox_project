@@ -25,6 +25,7 @@ def after_migrate():
 	setup_production_plan_no_bom()  # ABP2-I419 Phase 1
 	setup_phase2_cc_project_enforcement()  # ABP2-I419 Phase 2
 	setup_phase3_stock_entry_manufacture()  # ABP2-I419 Phase 3
+	setup_phase4_subcontracting()  # ABP2-I419 Phase 4
 
 
 FM_CHILD_TABLES = (
@@ -1719,5 +1720,86 @@ def setup_phase3_stock_entry_manufacture():
 
 	print(
 		f"detox_project: setup_phase3_stock_entry_manufacture — "
+		f"{created} Custom Field(s) upserted."
+	)
+
+
+# ---------------------------------------------------------------------------
+# ABP2-I419 Phase 4 — Subcontracting Flow A (v16 native)
+# (FR-15..21, FR-32, VAL-04, VAL-15..16)
+# ---------------------------------------------------------------------------
+def setup_phase4_subcontracting():
+	"""Custom Fields for CC + Project on Subcontracting Order / Receipt
+	(v16 native doctypes lack these). Subcontract field gating on
+	Detox Production Plan Operation is already wired in Phase 1 via
+	mandatory_depends_on on the child DocType JSON.
+
+	Idempotent. Skips silently when the v16 subcontracting doctypes
+	aren't present (pre-v16 benches use Flow B instead).
+	"""
+	specs = []
+	for dt in ("Subcontracting Order", "Subcontracting Receipt"):
+		if not frappe.db.exists("DocType", dt):
+			continue
+		specs.extend([
+			{
+				"dt": dt,
+				"fieldname": "custom_cost_center",
+				"label": "Cost Center",
+				"fieldtype": "Link",
+				"options": "Cost Center",
+				"insert_after": "project" if frappe.get_meta(dt).get_field("project") else "supplier",
+				"reqd": 1,
+				"description": "Header Cost Center (FR-22).",
+			},
+		])
+		# Make project mandatory if it exists natively.
+		if frappe.get_meta(dt).get_field("project"):
+			ps_name = f"{dt}-project-reqd"
+			if frappe.db.exists("Property Setter", ps_name):
+				ps = frappe.get_doc("Property Setter", ps_name)
+				if ps.value != "1":
+					ps.value = "1"
+					ps.save(ignore_permissions=True)
+			else:
+				frappe.get_doc({
+					"doctype": "Property Setter",
+					"name": ps_name,
+					"doctype_or_field": "DocField",
+					"doc_type": dt,
+					"field_name": "project",
+					"property": "reqd",
+					"property_type": "Check",
+					"value": "1",
+					"module": "Detox Project",
+				}).insert(ignore_permissions=True)
+
+	created = 0
+	for spec in specs:
+		dt = spec["dt"]
+		name = f"{dt}-{spec['fieldname']}"
+		spec = {**spec, "module": "Detox Project"}
+		if frappe.db.exists("Custom Field", name):
+			cf = frappe.get_doc("Custom Field", name)
+			dirty = False
+			for k, v in spec.items():
+				if k == "dt":
+					continue
+				if (cf.get(k) or "") != (v or ""):
+					cf.set(k, v); dirty = True
+			if dirty:
+				cf.save(ignore_permissions=True); created += 1
+			continue
+		frappe.get_doc({"doctype": "Custom Field", **spec}).insert(ignore_permissions=True)
+		created += 1
+
+	for dt in ("Subcontracting Order", "Subcontracting Receipt"):
+		try:
+			frappe.clear_cache(doctype=dt)
+		except Exception:
+			pass
+
+	print(
+		f"detox_project: setup_phase4_subcontracting — "
 		f"{created} Custom Field(s) upserted."
 	)

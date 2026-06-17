@@ -84,6 +84,16 @@ doc_events = {
 		"on_update": "detox_project.events.tender.on_update",
 		"before_cancel": "detox_project.events.tender.before_cancel",
 	},
+	# ABP2-I419 Phase 4 — Subcontracting Flow A (v16 native).
+	"Subcontracting Order": {
+		"validate": "detox_project.detox_project.overrides.subcontracting.validate_subcontracting_doc",
+	},
+	"Subcontracting Receipt": {
+		"validate": [
+			"detox_project.detox_project.overrides.subcontracting.validate_subcontracting_doc",
+			"detox_project.detox_project.overrides.subcontracting.validate_supplied_vs_consumed",
+		],
+	},
 	# ABP2-I419 Phase 2 — CC + Project mandatory + cascade across the
 	# manufacturing chain. Single shared guard in
 	# detox_project.detox_project.overrides.cc_project_guard.
