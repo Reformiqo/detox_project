@@ -30,6 +30,8 @@ doctype_js = {
 	"Purchase Receipt": "public/js/purchase_receipt_custom.js",
 	"Sales Order": "public/js/sales_order_custom.js",
 	"Quotation": "public/js/quotation_custom.js",
+	# ABP2-I419 Phase 1 — Production Plan No-BOM mode client logic.
+	"Production Plan": "public/js/production_plan_custom.js",
 }
 
 # --------------------------------------------------------------------------

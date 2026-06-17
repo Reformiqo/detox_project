@@ -22,6 +22,7 @@ def after_migrate():
 	unlock_orphaned_fm_child_rows()
 	heal_duplicate_wbs_allocations()  # ABP2-I455
 	heal_wbs_budget_spent()  # ABP2-I439
+	setup_production_plan_no_bom()  # ABP2-I419 Phase 1
 
 
 FM_CHILD_TABLES = (
@@ -1260,3 +1261,159 @@ def setup_fm_workflow():
 		frappe.db.commit()
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "FM Workflow Setup Error")
+
+
+# ---------------------------------------------------------------------------
+# ABP2-I419 Phase 1 — Production Plan No-BOM customizations
+# ---------------------------------------------------------------------------
+def setup_production_plan_no_bom():
+	"""Phase 1 of ABP2-I419 (Sahil 2026-06-15, Out of BRD).
+
+	Adds to Production Plan:
+	  - Custom Field `custom_no_bom` (Check) — toggles No-BOM mode.
+	  - Custom Field `custom_cost_center` (Link → Cost Center) on header.
+	  - Custom Field `custom_fg_items` (Table → Detox Production Plan FG)
+	    — Table 1, finished goods to manufacture.
+	  - Custom Field `custom_operations` (Table → Detox Production Plan
+	    Operation) — Table 2, operations + RM/service rows.
+	  - Property Setter making `project` mandatory.
+
+	The two child DocTypes (`Detox Production Plan FG`,
+	`Detox Production Plan Operation`) ship as source files under
+	detox_project/doctype/ and reload via `bench migrate`.
+
+	Subsequent phases (CC + Project mandatory everywhere, Stock Entry
+	Manufacture customizations, subcontracting, reports, deposits) are
+	tracked separately and not delivered here.
+
+	Idempotent.
+	"""
+	if not frappe.db.exists("DocType", "Production Plan"):
+		return
+
+	fields = [
+		{
+			"fieldname": "custom_no_bom",
+			"label": "No BOM",
+			"fieldtype": "Check",
+			"insert_after": "company",
+			"default": "0",
+			"description": (
+				"When checked, hides the standard BOM / Sales Order / "
+				"Material Request sections and uses the custom Finished "
+				"Goods + Operations tables instead."
+			),
+			"module": "Detox Project",
+		},
+		{
+			"fieldname": "custom_cost_center",
+			"label": "Cost Center",
+			"fieldtype": "Link",
+			"options": "Cost Center",
+			"insert_after": "custom_no_bom",
+			"reqd": 0,
+			"description": (
+				"Header-level Cost Center; cascades to Work Orders and "
+				"Stock Entries created from this plan."
+			),
+			"module": "Detox Project",
+		},
+		{
+			"fieldname": "custom_no_bom_section",
+			"label": "Finished Goods (No-BOM)",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_cost_center",
+			"depends_on": "eval:doc.custom_no_bom",
+			"module": "Detox Project",
+		},
+		{
+			"fieldname": "custom_fg_items",
+			"label": "Finished Goods",
+			"fieldtype": "Table",
+			"options": "Detox Production Plan FG",
+			"insert_after": "custom_no_bom_section",
+			"depends_on": "eval:doc.custom_no_bom",
+			"description": "Table 1 — Finished goods to manufacture in this plan.",
+			"module": "Detox Project",
+		},
+		{
+			"fieldname": "custom_operations_section",
+			"label": "Operations & Materials/Services (No-BOM)",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_fg_items",
+			"depends_on": "eval:doc.custom_no_bom",
+			"module": "Detox Project",
+		},
+		{
+			"fieldname": "custom_operations",
+			"label": "Operations & Materials",
+			"fieldtype": "Table",
+			"options": "Detox Production Plan Operation",
+			"insert_after": "custom_operations_section",
+			"depends_on": "eval:doc.custom_no_bom",
+			"description": (
+				"Table 2 — Flat per-row operations with materials / "
+				"services. Marking a row is_subcontracted converts it "
+				"into a job-work step driven from the plan."
+			),
+			"module": "Detox Project",
+		},
+	]
+
+	created_or_updated = 0
+	for spec in fields:
+		name = f"Production Plan-{spec['fieldname']}"
+		if frappe.db.exists("Custom Field", name):
+			cf = frappe.get_doc("Custom Field", name)
+			dirty = False
+			for k, v in spec.items():
+				if (cf.get(k) or "") != (v or ""):
+					cf.set(k, v)
+					dirty = True
+			if dirty:
+				cf.save(ignore_permissions=True)
+				created_or_updated += 1
+			continue
+		cf = frappe.get_doc({
+			"doctype": "Custom Field",
+			"dt": "Production Plan",
+			**spec,
+		})
+		cf.insert(ignore_permissions=True)
+		created_or_updated += 1
+
+	# Property Setters:
+	#   - project   reqd=1 (mandatory everywhere — FR-22)
+	#   - po_items  reqd=0 (the native "Assembly Items" table is reqd=1
+	#                       in v16; relax it so No-BOM mode plans can
+	#                       save with `custom_fg_items` instead. Phase 2
+	#                       adds a validate hook enforcing 'one of
+	#                       po_items OR custom_fg_items must be filled'.)
+	property_setters = [
+		("Production Plan-project-reqd", "project", "reqd", "Check", "1"),
+		("Production Plan-po_items-reqd", "po_items", "reqd", "Check", "0"),
+	]
+	for ps_name, field, prop, ptype, value in property_setters:
+		if frappe.db.exists("Property Setter", ps_name):
+			ps = frappe.get_doc("Property Setter", ps_name)
+			if ps.value != value:
+				ps.value = value
+				ps.save(ignore_permissions=True)
+			continue
+		frappe.get_doc({
+			"doctype": "Property Setter",
+			"name": ps_name,
+			"doctype_or_field": "DocField",
+			"doc_type": "Production Plan",
+			"field_name": field,
+			"property": prop,
+			"property_type": ptype,
+			"value": value,
+			"module": "Detox Project",
+		}).insert(ignore_permissions=True)
+
+	frappe.clear_cache(doctype="Production Plan")
+	print(
+		f"detox_project: setup_production_plan_no_bom — "
+		f"{created_or_updated} Custom Field(s) upserted."
+	)
