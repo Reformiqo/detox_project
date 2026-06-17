@@ -1499,6 +1499,25 @@ def setup_phase2_cc_project_enforcement():
 				"Inherited from the linked Work Order when present (L06)."
 			),
 		},
+		# Sahil 2026-06-17 — hidden 'cost_center' proxy on Stock Entry
+		# header so legacy DB-resident Client Scripts ('Cost center
+		# filter in Stock Entry' + 'project and cost center auto fetch
+		# at item leavl') can frm.set_value("cost_center", ...) without
+		# the 'Field cost_center not found' throw. before_save copies
+		# whatever lands here into custom_cost_center.
+		{
+			"dt": "Stock Entry",
+			"fieldname": "cost_center",
+			"label": "Cost Center (proxy)",
+			"fieldtype": "Link",
+			"options": "Cost Center",
+			"insert_after": "custom_cost_center",
+			"hidden": 1,
+			"description": (
+				"Hidden proxy for legacy Client Scripts; mirrored into "
+				"custom_cost_center on save."
+			),
+		},
 		# Work Order header — CC (no native field on Work Order).
 		{
 			"dt": "Work Order",
