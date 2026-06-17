@@ -2255,18 +2255,50 @@ def setup_phase7_process_table():
 # script content in place.
 # ---------------------------------------------------------------------------
 def heal_legacy_se_cost_center_scripts():
-	"""Patch DB-resident Client Scripts that still target the absent
-	`cost_center` header field on Stock Entry. Replaces every
-	`set_value('cost_center', …)` / `set_value(\"cost_center\", …)` call
-	with the same call against `custom_cost_center`.
+	"""Patch DB-resident Client Scripts that target the absent
+	`cost_center` HEADER field on Stock Entry. Phase 2 replaced it with
+	`custom_cost_center`; the native field doesn't exist on v16 SE
+	header, so every set_value / set_query / frm.doc.cost_center call
+	on the header throws 'Field cost_center not found' (Sahil Image
+	#28/29).
 
-	Idempotent — re-runs are no-ops because the replaced strings are
-	already gone.
+	Three header-level patterns get rewritten across every enabled
+	Client Script with dt='Stock Entry':
+	  - frm.set_value("cost_center", …)   → "custom_cost_center"
+	  - frm.set_query("cost_center", …)   → "custom_cost_center"
+	  - frm.doc.cost_center                → frm.doc.custom_cost_center
+	  - top-level hook key `cost_center:` inside form.on('Stock Entry')
+	    → custom_cost_center: (preserves the same handler inside
+	    Stock Entry Item handlers, which DOES have a real cost_center
+	    on the child row).
+
+	Idempotent — re-runs are no-ops once the patterns are gone.
 	"""
 	import re
 
 	if not frappe.db.exists("DocType", "Client Script"):
 		return
+
+	header_patterns = [
+		(re.compile(r"set_value\(\s*(['\"])cost_center\1"),
+		 "set_value(\"custom_cost_center\""),
+		(re.compile(r"set_query\(\s*(['\"])cost_center\1"),
+		 "set_query(\"custom_cost_center\""),
+		(re.compile(r"frm\.doc\.cost_center\b"),
+		 "frm.doc.custom_cost_center"),
+	]
+	# Hook-name rewrite — match a top-level handler key
+	# `cost_center: function(...)` that appears after a `,` or `{`,
+	# with arbitrary whitespace. This catches the form.on header-level
+	# hook regardless of nested braces in earlier handlers. We then
+	# REJECT matches that follow a 'Stock Entry Item' form.on block —
+	# the child row legitimately has a cost_center field.
+	hook_pattern = re.compile(
+		r"([,{]\s*)cost_center(\s*:\s*function)"
+	)
+	item_form_on = re.compile(
+		r"frappe\.ui\.form\.on\(\s*['\"]Stock Entry Item['\"]"
+	)
 
 	targets = frappe.get_all(
 		"Client Script",
@@ -2274,17 +2306,21 @@ def heal_legacy_se_cost_center_scripts():
 		fields=["name", "script"],
 	)
 	patched = 0
-	pattern = re.compile(r"set_value\(\s*(['\"])cost_center\1")
 	for cs in targets:
 		original = cs.script or ""
-		new = pattern.sub("set_value(\"custom_cost_center\"", original)
-		# Also patch the bare locals-style writes (sometimes legacy
-		# scripts go via locals[cdt][cdn].cost_center = …; leave child-
-		# row writes alone — those are real Stock Entry Detail rows).
+		new = original
+		for pat, repl in header_patterns:
+			new = pat.sub(repl, new)
+		# Replace top-level cost_center: handler keys, but ONLY in the
+		# region before any 'Stock Entry Item' form.on block (the child
+		# row genuinely has a cost_center field there).
+		item_start = item_form_on.search(new)
+		boundary = item_start.start() if item_start else len(new)
+		head, tail = new[:boundary], new[boundary:]
+		head = hook_pattern.sub(r"\1custom_cost_center\2", head)
+		new = head + tail
 		if new == original:
 			continue
-		# We only touched HEADER set_value calls; preserve the file's
-		# trailing semicolons and whitespace verbatim.
 		frappe.db.set_value(
 			"Client Script", cs.name, "script", new, update_modified=False,
 		)
