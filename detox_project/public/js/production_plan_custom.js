@@ -1,4 +1,7 @@
 // ABP2-I419 Production Plan client logic for No-BOM mode.
+// eslint-disable-next-line no-console
+console.log("[ABP2-I419] production_plan_custom.js Phase 7d loaded");
+
 //
 // Layers (cumulative):
 //   Phase 1 — No-BOM toggle, total_standard_cost, Multiply By,
@@ -109,22 +112,35 @@ function _apply_no_bom_visibility(frm) {
         "bom_section",
         "for_warehouse",
         "items_section",
+        "select_items_to_manufacture",
+        "assembly_items",
+        "sub_assembly_items",
     ];
     STANDARD_SECTIONS.forEach(fn => {
-        if (frm.fields_dict[fn]) frm.toggle_display(fn, !on);
+        if (!frm.fields_dict[fn]) return;
+        frm.set_df_property(fn, "hidden", on ? 1 : 0);
+        frm.toggle_display(fn, !on);
     });
     // Custom Production Plan sections / tables: shown only in No-BOM mode.
     ["custom_fg_items", "custom_processes",
      "custom_operations_view"].forEach(fn => {
-        if (frm.fields_dict[fn]) frm.toggle_display(fn, on);
+        if (!frm.fields_dict[fn]) return;
+        frm.set_df_property(fn, "hidden", on ? 0 : 1);
+        frm.toggle_display(fn, on);
     });
-    // Phase 7d — hide the canonical custom_operations grid; the per-
-    // operation cards drive add/edit/delete.
+    // Phase 7d — hide the canonical custom_operations grid in No-BOM mode;
+    // the per-operation cards drive add/edit/delete. Hide both the field
+    // and (in No-BOM mode) the section wrapper around it.
     if (frm.fields_dict.custom_operations) {
-        frm.toggle_display("custom_operations", false);
-        if (frm.fields_dict.custom_operations_section) {
-            frm.toggle_display("custom_operations_section", on);
-        }
+        frm.set_df_property("custom_operations", "hidden", on ? 1 : 0);
+        frm.toggle_display("custom_operations", !on);
+    }
+    if (frm.fields_dict.custom_operations_section) {
+        // Keep the section header visible in No-BOM mode so the per-
+        // operation cards have something to anchor under; hide it
+        // entirely in BOM mode.
+        frm.set_df_property("custom_operations_section", "hidden", on ? 0 : 1);
+        frm.toggle_display("custom_operations_section", on);
     }
 }
 
