@@ -105,8 +105,9 @@ function _apply_phase3_visibility(frm) {
 }
 
 // FR-11 — when the user picks a Purchase Order on a source row, restrict
-// the PO Item picker to lines from THAT PO. Wired on form refresh so it
-// covers grid rows added after first render.
+// the PO Item picker to lines from THAT PO. Also point at the custom
+// query so the autocomplete shows item_code instead of the row's hash
+// name (Sahil Image #34).
 function _wire_po_item_filter(frm) {
     const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
     if (!grid || !grid.get_field) return;
@@ -114,10 +115,14 @@ function _wire_po_item_filter(frm) {
     if (!po_item_field) return;
     po_item_field.get_query = function (doc, cdt, cdn) {
         const row = locals[cdt] && locals[cdt][cdn];
+        const filters = {};
         if (row && row.custom_purchase_order) {
-            return {filters: {parent: row.custom_purchase_order}};
+            filters.parent = row.custom_purchase_order;
         }
-        return {};
+        return {
+            query: "detox_project.detox_project.overrides.stock_entry_manufacture.po_item_link_query",
+            filters: filters,
+        };
     };
 }
 
