@@ -96,6 +96,13 @@ doc_events = {
 			"detox_project.detox_project.overrides.subcontracting.validate_supplied_vs_consumed",
 		],
 	},
+	# ABP2-I419 Phase 6 — Cylinder Deposit Ledger auto-create on DN / SI submit.
+	"Delivery Note": {
+		"on_submit": "detox_project.detox_project.doctype.cylinder_deposit_ledger.cylinder_deposit_ledger.auto_create_deposit_entries",
+	},
+	"Sales Invoice": {
+		"on_submit": "detox_project.detox_project.doctype.cylinder_deposit_ledger.cylinder_deposit_ledger.auto_create_deposit_entries",
+	},
 	# ABP2-I419 Phase 2 — CC + Project mandatory + cascade across the
 	# manufacturing chain. Single shared guard in
 	# detox_project.detox_project.overrides.cc_project_guard.

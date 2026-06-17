@@ -27,6 +27,7 @@ def after_migrate():
 	setup_phase3_stock_entry_manufacture()  # ABP2-I419 Phase 3
 	setup_phase4_subcontracting()  # ABP2-I419 Phase 4
 	setup_phase5_print_format()  # ABP2-I419 Phase 5
+	setup_phase6_cylinder_deposit()  # ABP2-I419 Phase 6
 
 
 FM_CHILD_TABLES = (
@@ -2017,3 +2018,81 @@ def overdue_production_plan_alert():
 			"for_user": u,
 			"type": "Alert",
 		}).insert(ignore_permissions=True)
+
+
+# ---------------------------------------------------------------------------
+# ABP2-I419 Phase 6 — Cylinder Deposit Ledger (optional, FR-33, L21, RPT-09)
+# ---------------------------------------------------------------------------
+def setup_phase6_cylinder_deposit():
+	"""Adds Item-master flags that opt an Item into the cylinder
+	deposit flow:
+	  - Item.custom_is_cylinder (Check) — mark this Item as a deposit-
+	    bearing cylinder.
+	  - Item.custom_deposit_amount (Currency) — refundable deposit
+	    captured on DN/SI submit.
+
+	Cylinder Deposit Ledger DocType ships as source files under
+	detox_project/doctype/cylinder_deposit_ledger/ and reloads on
+	migrate.
+	"""
+	if not frappe.db.exists("DocType", "Item"):
+		return
+	specs = [
+		{
+			"dt": "Item",
+			"fieldname": "custom_cylinder_section",
+			"label": "Cylinder Deposit",
+			"fieldtype": "Section Break",
+			"insert_after": "stock_uom",
+			"collapsible": 1,
+		},
+		{
+			"dt": "Item",
+			"fieldname": "custom_is_cylinder",
+			"label": "Is Cylinder",
+			"fieldtype": "Check",
+			"insert_after": "custom_cylinder_section",
+			"default": "0",
+			"description": (
+				"Marks this Item as a refundable-deposit cylinder. On "
+				"DN/SI submit a Cylinder Deposit Ledger entry is created "
+				"per serial."
+			),
+		},
+		{
+			"dt": "Item",
+			"fieldname": "custom_deposit_amount",
+			"label": "Deposit Amount",
+			"fieldtype": "Currency",
+			"insert_after": "custom_is_cylinder",
+			"depends_on": "eval:doc.custom_is_cylinder",
+			"description": (
+				"Refundable deposit per serial. Used by the "
+				"auto_create_deposit_entries hook."
+			),
+		},
+	]
+	created = 0
+	for spec in specs:
+		dt = spec["dt"]
+		name = f"{dt}-{spec['fieldname']}"
+		spec = {**spec, "module": "Detox Project"}
+		if frappe.db.exists("Custom Field", name):
+			cf = frappe.get_doc("Custom Field", name)
+			dirty = False
+			for k, v in spec.items():
+				if k == "dt":
+					continue
+				if (cf.get(k) or "") != (v or ""):
+					cf.set(k, v); dirty = True
+			if dirty:
+				cf.save(ignore_permissions=True); created += 1
+			continue
+		frappe.get_doc({"doctype": "Custom Field", **spec}).insert(ignore_permissions=True)
+		created += 1
+
+	frappe.clear_cache(doctype="Item")
+	print(
+		f"detox_project: setup_phase6_cylinder_deposit — "
+		f"{created} Custom Field(s) upserted on Item."
+	)
