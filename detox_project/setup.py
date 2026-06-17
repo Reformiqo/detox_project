@@ -28,6 +28,7 @@ def after_migrate():
 	setup_phase4_subcontracting()  # ABP2-I419 Phase 4
 	setup_phase5_print_format()  # ABP2-I419 Phase 5
 	setup_phase6_cylinder_deposit()  # ABP2-I419 Phase 6
+	setup_phase7_process_table()  # ABP2-I419 Phase 7
 
 
 FM_CHILD_TABLES = (
@@ -2095,4 +2096,90 @@ def setup_phase6_cylinder_deposit():
 	print(
 		f"detox_project: setup_phase6_cylinder_deposit — "
 		f"{created} Custom Field(s) upserted on Item."
+	)
+
+
+# ---------------------------------------------------------------------------
+# ABP2-I419 Phase 7 — Process (Operation + Workstation) header table
+# and per-Operation Raw Material grouping (Sahil 2026-06-17)
+# ---------------------------------------------------------------------------
+def setup_phase7_process_table():
+	"""Adds:
+	  - Custom Field Production Plan.custom_processes (Table → Detox
+	    Production Plan Process) inserted BEFORE the materials section.
+	  - Custom Field Production Plan.custom_operations_view (HTML) AFTER
+	    the materials table — renders the materials grouped per Operation
+	    (the visual 'separate tables per operation' layout from Sahil's
+	    screenshot).
+
+	Source-file child DocType `Detox Production Plan Process` ships in
+	doctype/detox_production_plan_process/. Idempotent.
+	"""
+	if not frappe.db.exists("DocType", "Production Plan"):
+		return
+	if not frappe.db.exists("DocType", "Detox Production Plan Process"):
+		# Source file not yet reloaded — bail; bench migrate will pick it up.
+		return
+
+	specs = [
+		{
+			"dt": "Production Plan",
+			"fieldname": "custom_processes_section",
+			"label": "Process (Operation + Workstation)",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_fg_items",
+			"depends_on": "eval:doc.custom_no_bom",
+		},
+		{
+			"dt": "Production Plan",
+			"fieldname": "custom_processes",
+			"label": "Processes",
+			"fieldtype": "Table",
+			"options": "Detox Production Plan Process",
+			"insert_after": "custom_processes_section",
+			"depends_on": "eval:doc.custom_no_bom",
+			"description": (
+				"Process / Operation header — Operation + Workstation. "
+				"The Operations & Materials table below groups rows under "
+				"each Operation defined here (Sahil 2026-06-17)."
+			),
+		},
+		{
+			"dt": "Production Plan",
+			"fieldname": "custom_operations_view",
+			"label": "Operations Breakdown",
+			"fieldtype": "HTML",
+			"insert_after": "custom_operations",
+			"depends_on": "eval:doc.custom_no_bom",
+			"options": (
+				"<div class='text-muted' style='font-size:12px;padding:6px 0'>"
+				"Read-only visual breakdown of the Operations & Materials "
+				"table above, grouped by Operation. Populated by the "
+				"Production Plan client script when Processes / Operations "
+				"change.</div>"
+			),
+		},
+	]
+	created = 0
+	for spec in specs:
+		name = f"Production Plan-{spec['fieldname']}"
+		spec = {**spec, "module": "Detox Project"}
+		if frappe.db.exists("Custom Field", name):
+			cf = frappe.get_doc("Custom Field", name)
+			dirty = False
+			for k, v in spec.items():
+				if k == "dt":
+					continue
+				if (cf.get(k) or "") != (v or ""):
+					cf.set(k, v); dirty = True
+			if dirty:
+				cf.save(ignore_permissions=True); created += 1
+			continue
+		frappe.get_doc({"doctype": "Custom Field", **spec}).insert(ignore_permissions=True)
+		created += 1
+
+	frappe.clear_cache(doctype="Production Plan")
+	print(
+		f"detox_project: setup_phase7_process_table — "
+		f"{created} Custom Field(s) upserted."
 	)
