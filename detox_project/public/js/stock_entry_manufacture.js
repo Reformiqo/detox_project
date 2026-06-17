@@ -13,6 +13,7 @@ frappe.ui.form.on("Stock Entry", {
     refresh(frm) {
         _apply_phase3_visibility(frm);
         _populate_process_options(frm);
+        _lock_source_row_fields(frm);
     },
 
     stock_entry_type(frm) {
@@ -102,6 +103,24 @@ function _apply_phase3_visibility(frm) {
     });
 }
 
+// FR-09 — on Manufacture-flow SEs, source rows (rows with s_warehouse
+// set) have item_code / uom / basic_rate / expense_account read-only;
+// only qty stays editable. Target FG rows keep all fields editable
+// for the user to enter what was actually produced.
+function _lock_source_row_fields(frm) {
+    if (!_is_mfg(frm)) return;
+    const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+    if (!grid || !grid.grid_rows) return;
+    const LOCKED = ["item_code", "uom", "basic_rate", "expense_account"];
+    grid.grid_rows.forEach((gr) => {
+        const row = gr.doc;
+        if (!row || !row.s_warehouse) return;
+        LOCKED.forEach((fn) => {
+            try { gr.toggle_editable(fn, false); } catch (e) { /* field absent */ }
+        });
+    });
+}
+
 function _populate_process_options(frm) {
     if (!frm.doc.production_plan) {
         if (frm.fields_dict.custom_process_selection) {
@@ -158,6 +177,8 @@ function _fetch_operation_rows(frm) {
                 if (frm.doc.from_warehouse) item.s_warehouse = frm.doc.from_warehouse;
             });
             frm.refresh_field("items");
+            // Lock the fetched source rows per FR-09.
+            _lock_source_row_fields(frm);
             frappe.show_alert({
                 message: __("Fetched {0} source row(s) for {1}.",
                             [rows.length, frm.doc.custom_process_selection]),

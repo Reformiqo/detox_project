@@ -28,6 +28,7 @@ frappe.ui.form.on("Production Plan", {
         _refresh_operation_options(frm);
         _render_per_operation_cards(frm);
         _sync_project_into_proxy(frm);
+        _add_stock_entry_button(frm);
     },
 
     custom_no_bom(frm) {
@@ -66,6 +67,37 @@ function _sync_project_into_proxy(frm) {
     } else if (frm.doc.custom_project && !frm.doc.project) {
         frm.set_value("project", frm.doc.custom_project);
     }
+}
+
+// FRD FR-07 + Sahil Image #17 — on a SUBMITTED No-BOM Production Plan,
+// add a 'Stock Entry' button under the Create menu that opens a fresh
+// Manufacture Stock Entry pre-filled with production_plan + company +
+// CC + project. Phase 3's stock_entry_manufacture.js takes it from
+// there: process_selection auto-fetches the operation's source rows.
+function _add_stock_entry_button(frm) {
+    if (frm.is_new()) return;
+    if (frm.doc.docstatus !== 1) return;
+    if (!frm.doc.custom_no_bom) return;
+
+    frm.add_custom_button(__("Stock Entry"), () => {
+        const new_se = frappe.model.get_new_doc("Stock Entry");
+        new_se.stock_entry_type = "Manufacture";
+        new_se.production_plan = frm.doc.name;
+        new_se.company = frm.doc.company;
+        if (frm.doc.custom_cost_center) {
+            new_se.custom_cost_center = frm.doc.custom_cost_center;
+        }
+        if (frm.doc.project) {
+            new_se.project = frm.doc.project;
+        }
+        // Default the source warehouse to the first FG row's warehouse
+        // (best-effort; user can override).
+        const first_fg = (frm.doc.custom_fg_items || [])[0];
+        if (first_fg && first_fg.fg_warehouse) {
+            new_se.from_warehouse = first_fg.fg_warehouse;
+        }
+        frappe.set_route("Form", "Stock Entry", new_se.name);
+    }, __("Create"));
 }
 
 frappe.ui.form.on("Detox Production Plan Process", {
