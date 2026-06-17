@@ -1699,7 +1699,7 @@ def setup_phase3_stock_entry_manufacture():
 			"default": "Hours",
 			"insert_after": "custom_production_time",
 		},
-		# --- Stock Entry Detail (per row) ---
+		# --- Stock Entry Detail (per row) — FR-11 / VAL-10 / L12 ---
 		{
 			"dt": "Stock Entry Detail",
 			"fieldname": "custom_purchase_order",
@@ -1707,6 +1707,8 @@ def setup_phase3_stock_entry_manufacture():
 			"fieldtype": "Link",
 			"options": "Purchase Order",
 			"insert_after": "item_code",
+			"in_list_view": 1,
+			"columns": 2,
 			"description": (
 				"Advance PO this consumed material was procured against; "
 				"basis for the Production Cost Comparison report."
@@ -1719,6 +1721,8 @@ def setup_phase3_stock_entry_manufacture():
 			"fieldtype": "Link",
 			"options": "Purchase Order Item",
 			"insert_after": "custom_purchase_order",
+			"in_list_view": 1,
+			"columns": 2,
 			"description": "Specific PO line — used to fetch the actual procured rate.",
 		},
 	]

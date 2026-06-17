@@ -14,6 +14,7 @@ frappe.ui.form.on("Stock Entry", {
         _apply_phase3_visibility(frm);
         _populate_process_options(frm);
         _lock_source_row_fields(frm);
+        _wire_po_item_filter(frm);
     },
 
     stock_entry_type(frm) {
@@ -101,6 +102,23 @@ function _apply_phase3_visibility(frm) {
             frm.toggle_reqd(fn, true);
         }
     });
+}
+
+// FR-11 — when the user picks a Purchase Order on a source row, restrict
+// the PO Item picker to lines from THAT PO. Wired on form refresh so it
+// covers grid rows added after first render.
+function _wire_po_item_filter(frm) {
+    const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+    if (!grid || !grid.get_field) return;
+    const po_item_field = grid.get_field("custom_purchase_order_item");
+    if (!po_item_field) return;
+    po_item_field.get_query = function (doc, cdt, cdn) {
+        const row = locals[cdt] && locals[cdt][cdn];
+        if (row && row.custom_purchase_order) {
+            return {filters: {parent: row.custom_purchase_order}};
+        }
+        return {};
+    };
 }
 
 // FR-09 — on Manufacture-flow SEs, source rows (rows with s_warehouse
