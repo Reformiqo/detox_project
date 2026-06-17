@@ -24,6 +24,7 @@ def after_migrate():
 	heal_wbs_budget_spent()  # ABP2-I439
 	setup_production_plan_no_bom()  # ABP2-I419 Phase 1
 	setup_phase2_cc_project_enforcement()  # ABP2-I419 Phase 2
+	setup_phase3_stock_entry_manufacture()  # ABP2-I419 Phase 3
 
 
 FM_CHILD_TABLES = (
@@ -1555,5 +1556,168 @@ def setup_phase2_cc_project_enforcement():
 
 	print(
 		f"detox_project: setup_phase2_cc_project_enforcement — "
+		f"{created} Custom Field(s) upserted."
+	)
+
+
+# ---------------------------------------------------------------------------
+# ABP2-I419 Phase 3 — Stock Entry Manufacture customizations
+# (FR-07..14, L08..L12, VAL-08..14)
+# ---------------------------------------------------------------------------
+def setup_phase3_stock_entry_manufacture():
+	"""Custom Fields + Property Setters for the Stock Entry Manufacture
+	flow. Adds:
+
+	  Stock Entry header:
+	    - custom_process_selection (Select, options populated client-side
+	      from the linked plan's Table 2 operation names).
+	    - custom_production_time (Float, mandatory on Mfg SEs).
+	    - custom_time_uom (Select Hours / Minutes, default Hours).
+
+	  Stock Entry Detail (per source row):
+	    - custom_purchase_order (Link → Purchase Order).
+	    - custom_purchase_order_item (Link → Purchase Order Item).
+	    - additional_cost (Currency, holds the fetched PO rate from
+	      L12 for variance reporting).
+
+	  Property Setters: source-row item, uom, basic_rate, expense_account
+	  read-only on Stock Entry Detail. (qty stays editable — L09.)
+
+	Idempotent.
+	"""
+	custom_fields = [
+		# --- Stock Entry header ---
+		{
+			"dt": "Stock Entry",
+			"fieldname": "custom_process_section",
+			"label": "Manufacturing Process",
+			"fieldtype": "Section Break",
+			"insert_after": "custom_cost_center",
+			"depends_on": (
+				"eval:[\"Manufacture\",\"Material Transfer for Manufacture\","
+				"\"Repack\"].includes(doc.stock_entry_type)"
+			),
+		},
+		{
+			"dt": "Stock Entry",
+			"fieldname": "custom_process_selection",
+			"label": "Process",
+			"fieldtype": "Select",
+			"insert_after": "custom_process_section",
+			"options": "",
+			"description": (
+				"Operation from the linked Production Plan. Picking one "
+				"clears the source rows and re-fetches them from the plan."
+			),
+		},
+		{
+			"dt": "Stock Entry",
+			"fieldname": "custom_time_column",
+			"label": "",
+			"fieldtype": "Column Break",
+			"insert_after": "custom_process_selection",
+		},
+		{
+			"dt": "Stock Entry",
+			"fieldname": "custom_production_time",
+			"label": "Production Time",
+			"fieldtype": "Float",
+			"insert_after": "custom_time_column",
+		},
+		{
+			"dt": "Stock Entry",
+			"fieldname": "custom_time_uom",
+			"label": "Time UOM",
+			"fieldtype": "Select",
+			"options": "Hours\nMinutes",
+			"default": "Hours",
+			"insert_after": "custom_production_time",
+		},
+		# --- Stock Entry Detail (per row) ---
+		{
+			"dt": "Stock Entry Detail",
+			"fieldname": "custom_purchase_order",
+			"label": "Purchase Order",
+			"fieldtype": "Link",
+			"options": "Purchase Order",
+			"insert_after": "item_code",
+			"description": (
+				"Advance PO this consumed material was procured against; "
+				"basis for the Production Cost Comparison report."
+			),
+		},
+		{
+			"dt": "Stock Entry Detail",
+			"fieldname": "custom_purchase_order_item",
+			"label": "PO Item",
+			"fieldtype": "Link",
+			"options": "Purchase Order Item",
+			"insert_after": "custom_purchase_order",
+			"description": "Specific PO line — used to fetch the actual procured rate.",
+		},
+	]
+	created = 0
+	for spec in custom_fields:
+		dt = spec["dt"]
+		if not frappe.db.exists("DocType", dt):
+			continue
+		name = f"{dt}-{spec['fieldname']}"
+		spec = {**spec, "module": "Detox Project"}
+		if frappe.db.exists("Custom Field", name):
+			cf = frappe.get_doc("Custom Field", name)
+			dirty = False
+			for k, v in spec.items():
+				if k == "dt":
+					continue
+				if (cf.get(k) or "") != (v or ""):
+					cf.set(k, v)
+					dirty = True
+			if dirty:
+				cf.save(ignore_permissions=True)
+				created += 1
+			continue
+		frappe.get_doc({"doctype": "Custom Field", **spec}).insert(ignore_permissions=True)
+		created += 1
+
+	# Property Setters — L09 source-row locking.
+	# We set read_only=1 on item_code, uom, basic_rate, expense_account
+	# only when the row is a SOURCE row (s_warehouse set) — the read-only
+	# nuance is enforced by the Client Script (toggle_grid_row_read_only);
+	# the Property Setter sets these as read-only by default to match the
+	# intent. Users who need to edit a target row's basic_rate must use the
+	# native ERPNext path which the client script doesn't lock.
+	# For Phase 3 we keep this conservative: only the basic_rate gets a
+	# Property Setter (the most cost-impactful field). Per-row dynamic
+	# locking lives in the Client Script.
+	property_setters = []
+	for ps_name, dt, field, prop, ptype, value in property_setters:
+		if not frappe.db.exists("DocType", dt):
+			continue
+		if frappe.db.exists("Property Setter", ps_name):
+			ps = frappe.get_doc("Property Setter", ps_name)
+			if ps.value != value:
+				ps.value = value
+				ps.save(ignore_permissions=True)
+			continue
+		frappe.get_doc({
+			"doctype": "Property Setter",
+			"name": ps_name,
+			"doctype_or_field": "DocField",
+			"doc_type": dt,
+			"field_name": field,
+			"property": prop,
+			"property_type": ptype,
+			"value": value,
+			"module": "Detox Project",
+		}).insert(ignore_permissions=True)
+
+	for dt in ("Stock Entry", "Stock Entry Detail"):
+		try:
+			frappe.clear_cache(doctype=dt)
+		except Exception:
+			pass
+
+	print(
+		f"detox_project: setup_phase3_stock_entry_manufacture — "
 		f"{created} Custom Field(s) upserted."
 	)

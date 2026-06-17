@@ -32,6 +32,8 @@ doctype_js = {
 	"Quotation": "public/js/quotation_custom.js",
 	# ABP2-I419 Phase 1 — Production Plan No-BOM mode client logic.
 	"Production Plan": "public/js/production_plan_custom.js",
+	# ABP2-I419 Phase 3 — Stock Entry Manufacture client logic.
+	"Stock Entry": "public/js/stock_entry_manufacture.js",
 }
 
 # --------------------------------------------------------------------------
@@ -94,7 +96,13 @@ doc_events = {
 	},
 	"Stock Entry": {
 		"before_save": "detox_project.detox_project.overrides.cc_project_guard.inherit_se_from_work_order",
-		"validate": "detox_project.detox_project.overrides.cc_project_guard.validate_stock_entry",
+		"validate": [
+			"detox_project.detox_project.overrides.cc_project_guard.validate_stock_entry",
+			# ABP2-I419 Phase 3 — Mfg-flow validations + rollup.
+			"detox_project.detox_project.overrides.stock_entry_manufacture.validate_stock_entry_manufacture",
+		],
+		"on_submit": "detox_project.detox_project.overrides.stock_entry_manufacture.rollup_total_produced_on_submit",
+		"on_cancel": "detox_project.detox_project.overrides.stock_entry_manufacture.rollup_total_produced_on_cancel",
 	},
 }
 
