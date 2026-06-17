@@ -159,9 +159,19 @@ function _fetch_operation_rows(frm) {
         },
         callback(r) {
             const rows = (r && r.message) || [];
-            // Remove existing SOURCE rows (rows with s_warehouse). Keep
-            // target FG rows the user already typed.
-            frm.doc.items = (frm.doc.items || []).filter((row) => !row.s_warehouse);
+            // FR-09 — Clear any rows we previously auto-fetched. We tag
+            // each fetched row with _auto_fetched so we can wipe them
+            // on the next Process change without disturbing target FG
+            // rows the user typed manually. Also clear empty placeholder
+            // rows (no item_code) Frappe auto-adds to the grid.
+            const survivors = (frm.doc.items || []).filter((row) => {
+                if (row._auto_fetched) return false;
+                if (!row.item_code) return false;  // empty placeholder
+                return true;
+            });
+            // Rebuild the table from scratch — set the canonical array
+            // back and let Frappe re-index.
+            frm.doc.items = survivors;
             if (!rows.length) {
                 frm.refresh_field("items");
                 frappe.msgprint({
@@ -179,6 +189,7 @@ function _fetch_operation_rows(frm) {
             }
             rows.forEach((src) => {
                 const item = frappe.model.add_child(frm.doc, "Stock Entry Detail", "items");
+                item._auto_fetched = true;  // marker for the next clear
                 item.item_code = src.item_code;
                 item.item_name = src.item_name;
                 item.uom = src.uom;
