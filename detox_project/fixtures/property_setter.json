@@ -510,5 +510,37 @@
   "property_type": "Check",
   "row_name": null,
   "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Production Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "project",
+  "is_system_generated": 0,
+  "modified": "2026-06-17 23:58:01.403548",
+  "module": "Detox Project",
+  "name": "Production Plan-project-depends_on",
+  "property": "depends_on",
+  "property_type": "Code",
+  "row_name": null,
+  "value": "eval: doc.get_items_from == \"Sales Order\" || doc.custom_no_bom"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Production Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "customer",
+  "is_system_generated": 0,
+  "modified": "2026-06-17 23:58:02.278354",
+  "module": "Detox Project",
+  "name": "Production Plan-customer-depends_on",
+  "property": "depends_on",
+  "property_type": "Code",
+  "row_name": null,
+  "value": "eval: doc.get_items_from == \"Sales Order\" || doc.custom_no_bom"
  }
 ]

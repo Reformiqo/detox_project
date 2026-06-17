@@ -1398,6 +1398,15 @@ def setup_production_plan_no_bom():
 	property_setters = [
 		("Production Plan-project-reqd", "project", "reqd", "Check", "1"),
 		("Production Plan-po_items-reqd", "po_items", "reqd", "Check", "0"),
+		# Sahil Image #14 — native Production Plan.project depends_on is
+		# 'eval: doc.get_items_from == "Sales Order"', so the field stays
+		# hidden in No-BOM mode and the user can't satisfy the reqd=1 we
+		# set above. Widen the gate to also show when custom_no_bom = 1.
+		("Production Plan-project-depends_on", "project", "depends_on", "Code",
+		 'eval: doc.get_items_from == "Sales Order" || doc.custom_no_bom'),
+		# Mirror the same widening for `customer` — symmetric with project.
+		("Production Plan-customer-depends_on", "customer", "depends_on", "Code",
+		 'eval: doc.get_items_from == "Sales Order" || doc.custom_no_bom'),
 	]
 	for ps_name, field, prop, ptype, value in property_setters:
 		if frappe.db.exists("Property Setter", ps_name):
