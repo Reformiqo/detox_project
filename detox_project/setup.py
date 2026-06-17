@@ -2151,13 +2151,13 @@ def setup_phase7_process_table():
 			"fieldtype": "HTML",
 			"insert_after": "custom_operations",
 			"depends_on": "eval:doc.custom_no_bom",
-			"options": (
-				"<div class='text-muted' style='font-size:12px;padding:6px 0'>"
-				"Read-only visual breakdown of the Operations & Materials "
-				"table above, grouped by Operation. Populated by the "
-				"Production Plan client script when Processes / Operations "
-				"change.</div>"
-			),
+			# Empty by design. Frappe runs the HTML field's `options`
+			# through its microtemplate engine on every form refresh; a
+			# non-empty options string with apostrophes / ampersands /
+			# special chars produces 'Error in Template' parse errors
+			# (Sahil Image #11 — microtemplate.js:90:12). The client
+			# script renders everything into this field's $wrapper.
+			"options": "",
 		},
 	]
 	created = 0
