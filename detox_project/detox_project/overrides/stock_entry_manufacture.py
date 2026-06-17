@@ -87,6 +87,26 @@ def _default_expense_account(item_code: str) -> str | None:
 
 
 @frappe.whitelist()
+def get_plan_processes(production_plan: str) -> list[dict]:
+    """Sahil Image #30 — the Process dropdown on the SE was empty
+    because client-side frappe.db.get_list on the child DocType
+    'Detox Production Plan Process' hit permission walls (the user
+    has no direct read permission on the child; child perms inherit
+    from parent only when accessed via the parent's bag). A
+    server-side whitelisted SQL bypasses the issue and returns the
+    plan's declared Operations + their Workstation."""
+    if not production_plan:
+        return []
+    return frappe.db.sql(
+        """SELECT operation_name, workstation, operation_seq
+           FROM `tabDetox Production Plan Process`
+           WHERE parent = %s AND parenttype = 'Production Plan'
+           ORDER BY operation_seq, idx""",
+        production_plan, as_dict=True,
+    )
+
+
+@frappe.whitelist()
 def get_fg_defaults(production_plan: str, item_code: str) -> dict:
     """L10 — when a target FG row's item_code is set, return the
     matching Table 1 row's fg_warehouse + standard_costing_rate so the

@@ -129,28 +129,24 @@ function _populate_process_options(frm) {
         }
         return;
     }
-    // Read the Process header table (Phase 7 — Detox Production Plan
-    // Process) so every Operation the user declared on the plan shows
-    // up here, even if no materials rows have been added for it yet.
-    frappe.db.get_list("Detox Production Plan Process", {
-        filters: {
-            parent: frm.doc.production_plan,
-            parenttype: "Production Plan",
+    // Whitelisted server method — bypasses client-side child-perm
+    // walls on Detox Production Plan Process.
+    frappe.call({
+        method: "detox_project.detox_project.overrides.stock_entry_manufacture.get_plan_processes",
+        args: {production_plan: frm.doc.production_plan},
+        callback(r) {
+            const rows = (r && r.message) || [];
+            const seen = new Set();
+            const opts = ["", ...rows.map((row) => row.operation_name).filter((n) => {
+                if (!n || seen.has(n)) return false;
+                seen.add(n);
+                return true;
+            })];
+            if (frm.fields_dict.custom_process_selection) {
+                frm.set_df_property("custom_process_selection", "options", opts.join("\n"));
+                frm.refresh_field("custom_process_selection");
+            }
         },
-        fields: ["operation_name", "operation_seq"],
-        order_by: "operation_seq asc, idx asc",
-        limit: 100,
-    }).then((rows) => {
-        const seen = new Set();
-        const opts = ["", ...rows.map((r) => r.operation_name).filter((n) => {
-            if (!n || seen.has(n)) return false;
-            seen.add(n);
-            return true;
-        })];
-        if (frm.fields_dict.custom_process_selection) {
-            frm.set_df_property("custom_process_selection", "options", opts.join("\n"));
-            frm.refresh_field("custom_process_selection");
-        }
     });
 }
 
