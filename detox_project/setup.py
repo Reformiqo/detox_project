@@ -1324,11 +1324,33 @@ def setup_production_plan_no_bom():
 			),
 			"module": "Detox Project",
 		},
+		# Sahil Image #16 — Project field next to Cost Center. Proxy
+		# for the native `project` field (which lives in the Filters
+		# section further down and is awkward to surface there).
+		# Client Script keeps both in sync; saving sets doc.project so
+		# the Phase 2 validate + native reqd are satisfied.
+		{
+			"fieldname": "custom_project_col_break",
+			"label": "",
+			"fieldtype": "Column Break",
+			"insert_after": "custom_cost_center",
+			"module": "Detox Project",
+		},
+		{
+			"fieldname": "custom_project",
+			"label": "Project",
+			"fieldtype": "Link",
+			"options": "Project",
+			"insert_after": "custom_project_col_break",
+			"mandatory_depends_on": "eval:doc.custom_no_bom",
+			"description": "Project for this plan. Synced to the native Project field on save.",
+			"module": "Detox Project",
+		},
 		{
 			"fieldname": "custom_no_bom_section",
 			"label": "Finished Goods (No-BOM)",
 			"fieldtype": "Section Break",
-			"insert_after": "custom_cost_center",
+			"insert_after": "custom_project",
 			"depends_on": "eval:doc.custom_no_bom",
 			"module": "Detox Project",
 		},

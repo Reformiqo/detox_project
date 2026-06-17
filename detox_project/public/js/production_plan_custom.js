@@ -19,6 +19,7 @@ frappe.ui.form.on("Production Plan", {
     onload(frm) {
         _apply_no_bom_visibility(frm);
         _refresh_operation_options(frm);
+        _sync_project_into_proxy(frm);
     },
 
     refresh(frm) {
@@ -26,6 +27,7 @@ frappe.ui.form.on("Production Plan", {
         _recompute_multiply_by(frm);
         _refresh_operation_options(frm);
         _render_per_operation_cards(frm);
+        _sync_project_into_proxy(frm);
     },
 
     custom_no_bom(frm) {
@@ -34,14 +36,37 @@ frappe.ui.form.on("Production Plan", {
     },
 
     custom_cost_center(frm) {
-        // Header CC changed — re-render so any pre-fill hints update.
+        _render_per_operation_cards(frm);
+    },
+
+    // Sahil Image #16 — custom_project is the user-facing proxy field
+    // sitting next to Cost Center. Push its value into the native
+    // doc.project so the reqd=1 (Phase 1) + validate hook (Phase 2)
+    // accept the value on save.
+    custom_project(frm) {
+        if (frm.doc.custom_project !== frm.doc.project) {
+            frm.set_value("project", frm.doc.custom_project);
+        }
         _render_per_operation_cards(frm);
     },
 
     project(frm) {
+        // Mirror back so the proxy stays in sync if anything (e.g. an
+        // older bookmarked link, an integration) sets doc.project.
+        if (frm.doc.project !== frm.doc.custom_project) {
+            frm.set_value("custom_project", frm.doc.project);
+        }
         _render_per_operation_cards(frm);
     },
 });
+
+function _sync_project_into_proxy(frm) {
+    if (frm.doc.project && frm.doc.project !== frm.doc.custom_project) {
+        frm.set_value("custom_project", frm.doc.project);
+    } else if (frm.doc.custom_project && !frm.doc.project) {
+        frm.set_value("project", frm.doc.custom_project);
+    }
+}
 
 frappe.ui.form.on("Detox Production Plan Process", {
     operation_name(frm) {

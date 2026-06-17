@@ -35,7 +35,18 @@ PP_CC_FIELD = "custom_cost_center"
 def validate_production_plan(doc, method=None):
     """VAL-01 + VAL-02 — header CC + Project mandatory; copy header CC/Project
     to blank rows in custom_fg_items + custom_operations; throw if still blank.
+
+    Sahil Image #16 add-on: doc.custom_project is the user-facing proxy
+    Project field rendered next to Cost Center. Copy it into doc.project
+    BEFORE the header check so server-only callers (API / import / fixture
+    load) don't fail the reqd=1 + Phase 2 guard when only the proxy is set.
     """
+    custom_pj = doc.get("custom_project")
+    if custom_pj and not doc.get("project"):
+        doc.project = custom_pj
+    elif doc.get("project") and not custom_pj:
+        doc.custom_project = doc.get("project")
+
     header_cc = doc.get(PP_CC_FIELD)
     header_pj = doc.get("project")
     _check_header(doc, header_cc, header_pj, "Production Plan")
