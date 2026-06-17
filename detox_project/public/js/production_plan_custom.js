@@ -115,22 +115,21 @@ function _apply_no_bom_visibility(frm) {
     });
 }
 
-// Phase 7 — populate the Detox Production Plan Operation grid's
-// operation_name autocomplete with the Operations defined in the
-// custom_processes table. Free-text fallback stays allowed so the
-// user can still hand-type an operation name.
+// Phase 7b — operation_name on both Process + Operation child tables
+// is now a Link → Operation (ERPNext manufacturing master). Restrict
+// the materials grid's Link picker to the Operations already defined
+// in this plan's custom_processes table, so a Materials row can only
+// reference an Operation that's been declared.
 function _refresh_operation_options(frm) {
     const grid = frm.fields_dict.custom_operations && frm.fields_dict.custom_operations.grid;
     if (!grid) return;
-    const ops = (frm.doc.custom_processes || [])
-        .map(p => (p.operation_name || "").trim())
+    const allowed = (frm.doc.custom_processes || [])
+        .map(p => p.operation_name)
         .filter(Boolean);
-    const docfield = grid.docfields && grid.docfields.find(d => d.fieldname === "operation_name");
-    if (docfield) {
-        // operation_name is a Data field on the child JSON; expose the
-        // process names via autocompletions so the user can pick from them.
-        docfield.autocomplete = ops;
-    }
+    grid.get_field("operation_name").get_query = function () {
+        if (!allowed.length) return {};
+        return {filters: {name: ["in", allowed]}};
+    };
 }
 
 // Phase 7 — read-only HTML breakdown showing materials grouped per

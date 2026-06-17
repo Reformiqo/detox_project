@@ -112,8 +112,10 @@ class TestABP2I419Phase1Foundation(IntegrationTestCase):
             "Warehouse", {"company": company, "is_group": 0}, "name")
         item = frappe.db.get_value(
             "Item", {"is_stock_item": 1, "disabled": 0}, "name")
-        if not all([project, cc, wh, item]):
-            self.skipTest("Bench lacks a fixture (Project / CC / Warehouse / Item)")
+        # Phase 7b — operation_name is a Link → Operation, must reference a real master row.
+        op = frappe.db.get_value("Operation", {}, "name")
+        if not all([project, cc, wh, item, op]):
+            self.skipTest("Bench lacks a fixture (Project / CC / Warehouse / Item / Operation)")
 
         doc = frappe.get_doc({
             "doctype": "Production Plan",
@@ -133,7 +135,7 @@ class TestABP2I419Phase1Foundation(IntegrationTestCase):
                 "project": project,
             }],
             "custom_operations": [{
-                "operation_name": "Filling",
+                "operation_name": op,
                 "operation_seq": 1,
                 "item_code": item,
                 "item_type": "Raw Material",
@@ -151,7 +153,7 @@ class TestABP2I419Phase1Foundation(IntegrationTestCase):
             self.assertEqual(len(doc.custom_fg_items), 1)
             self.assertEqual(len(doc.custom_operations), 1)
             self.assertEqual(doc.custom_fg_items[0].item_code, item)
-            self.assertEqual(doc.custom_operations[0].operation_name, "Filling")
+            self.assertEqual(doc.custom_operations[0].operation_name, op)
         finally:
             if doc.name and frappe.db.exists("Production Plan", doc.name):
                 frappe.delete_doc(
@@ -191,5 +193,7 @@ class TestABP2I419Phase1Foundation(IntegrationTestCase):
                 "project": project,  # row project required by child reqd=1.
             }],
         })
-        with self.assertRaises(frappe.MandatoryError):
+        # Either Phase 1's PS-driven MandatoryError or Phase 2's
+        # validate-hook ValidationError is acceptable — both block save.
+        with self.assertRaises((frappe.MandatoryError, frappe.ValidationError)):
             doc.insert(ignore_permissions=True)

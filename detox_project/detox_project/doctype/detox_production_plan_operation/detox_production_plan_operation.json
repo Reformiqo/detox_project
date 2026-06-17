@@ -29,11 +29,12 @@
  "fields": [
   {
    "columns": 2,
-   "description": "Grouping label (e.g. Filling, Pressure Testing). Flat table — not a nested DocType.",
+   "description": "Linked to the ERPNext Operation master. Buckets this material/service row under the matching Process row (which links to the same Operation master).",
    "fieldname": "operation_name",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Operation",
+   "options": "Operation",
    "reqd": 1
   },
   {

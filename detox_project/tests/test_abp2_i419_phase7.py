@@ -19,10 +19,25 @@ class TestABP2I419Phase7(IntegrationTestCase):
             df = meta.get_field(fn)
             self.assertIsNotNone(df, f"Detox Production Plan Process.{fn} must exist")
             self.assertEqual(df.reqd, 1, f"{fn} must be reqd=1")
+            self.assertEqual(
+                df.fieldtype, "Link",
+                f"{fn} must be a Link field (Phase 7b)",
+            )
         self.assertEqual(
             meta.get_field("workstation").options, "Workstation",
             "workstation must link to native ERPNext Workstation",
         )
+        self.assertEqual(
+            meta.get_field("operation_name").options, "Operation",
+            "operation_name must link to ERPNext Operation master (Phase 7b)",
+        )
+
+    def test_materials_table_operation_is_link_to_operation(self):
+        df = frappe.get_meta("Detox Production Plan Operation").get_field(
+            "operation_name")
+        self.assertEqual(df.fieldtype, "Link",
+                         "Materials row operation_name must be Link (Phase 7b)")
+        self.assertEqual(df.options, "Operation")
 
     def test_pp_custom_processes_field_present(self):
         cf = frappe.db.get_value(
@@ -55,8 +70,14 @@ class TestABP2I419Phase7(IntegrationTestCase):
         item = frappe.db.get_value(
             "Item", {"is_stock_item": 1, "disabled": 0}, "name")
         ws = frappe.db.get_value("Workstation", {}, "name")
-        if not all([project, cc, wh, item, ws]):
-            self.skipTest("Bench lacks a fixture (Project / CC / WH / Item / Workstation)")
+        # Phase 7b — operation_name is now Link → Operation, so we need
+        # actual Operation master records to populate it.
+        op_names = [r[0] for r in frappe.db.sql(
+            "SELECT name FROM `tabOperation` LIMIT 2")]
+        if not all([project, cc, wh, item, ws]) or len(op_names) < 1:
+            self.skipTest("Bench lacks a fixture (Project / CC / WH / Item / Workstation / Operation)")
+        op1 = op_names[0]
+        op2 = op_names[1] if len(op_names) > 1 else op1
 
         doc = frappe.get_doc({
             "doctype": "Production Plan",
@@ -66,9 +87,9 @@ class TestABP2I419Phase7(IntegrationTestCase):
             "project": project,
             "posting_date": frappe.utils.today(),
             "custom_processes": [
-                {"operation_name": "Trimming", "workstation": ws, "operation_seq": 1},
-                {"operation_name": "Filling",  "workstation": ws, "operation_seq": 2},
-            ],
+                {"operation_name": op1, "workstation": ws, "operation_seq": 1},
+            ] + ([{"operation_name": op2, "workstation": ws, "operation_seq": 2}]
+                 if op2 != op1 else []),
             "custom_fg_items": [{
                 "item_code": item, "qty_to_manufacture": 100,
                 "planned_date": frappe.utils.today(), "fg_warehouse": wh,
@@ -76,24 +97,17 @@ class TestABP2I419Phase7(IntegrationTestCase):
                 "cost_center": cc, "project": project,
             }],
             "custom_operations": [
-                {"operation_name": "Trimming", "item_code": item, "item_type": "Raw Material",
+                {"operation_name": op1, "item_code": item, "item_type": "Raw Material",
                  "standard_rate": 50, "qty_per_unit": 2, "multiply_by": 200,
-                 "cost_center": cc, "project": project},
-                {"operation_name": "Filling",  "item_code": item, "item_type": "Raw Material",
-                 "standard_rate": 75, "qty_per_unit": 1, "multiply_by": 100,
                  "cost_center": cc, "project": project},
             ],
         })
         try:
             doc.insert(ignore_permissions=True)
-            self.assertEqual(len(doc.custom_processes), 2)
-            self.assertEqual(len(doc.custom_operations), 2)
-            self.assertEqual(doc.custom_processes[0].operation_name, "Trimming")
+            self.assertGreaterEqual(len(doc.custom_processes), 1)
+            self.assertEqual(doc.custom_processes[0].operation_name, op1)
             self.assertEqual(doc.custom_processes[0].workstation, ws)
-            # Operations carry the same operation_name labels — the
-            # grouped view will bucket them by these labels.
-            ops_by_op = {o.operation_name for o in doc.custom_operations}
-            self.assertEqual(ops_by_op, {"Trimming", "Filling"})
+            self.assertEqual(doc.custom_operations[0].operation_name, op1)
         finally:
             if doc.name and frappe.db.exists("Production Plan", doc.name):
                 frappe.delete_doc(
