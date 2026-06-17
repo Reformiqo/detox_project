@@ -82,21 +82,47 @@ class SubWBSElement(Document):
 		wbs.refresh_spent_amounts()
 
 	def refresh_spent_amounts(self):
-		spent = (
-			frappe.db.sql(
-				"""
-				SELECT COALESCE(SUM(wa.allocated_amount), 0)
-				FROM `tabWBS Allocation` wa
-				INNER JOIN `tabPurchase Order` po ON po.name = wa.parent
-				WHERE wa.parenttype = 'Purchase Order'
-				AND wa.sub_wbs_element = %s
-				AND po.docstatus = 1
-				""",
-				self.name,
-			)[0][0]
-			or 0
-		)
+		"""ABP2-I439 (Sahil 2026-06-10) — same fix as WBS Element:
+		spent = submitted POs + submitted PIs (de-double-counted on
+		PI → PO conversion). See wbs_element.refresh_spent_amounts for
+		the full reasoning."""
+		from frappe.utils import flt
 
-		self.budget_spent = spent
+		po_spent = flt(frappe.db.sql(
+			"""
+			SELECT COALESCE(SUM(wa.allocated_amount), 0)
+			FROM `tabWBS Allocation` wa
+			INNER JOIN `tabPurchase Order` po ON po.name = wa.parent
+			WHERE wa.parenttype = 'Purchase Order'
+			  AND wa.sub_wbs_element = %s
+			  AND po.docstatus = 1
+			""",
+			self.name,
+		)[0][0])
+
+		pi_spent = flt(frappe.db.sql(
+			"""
+			SELECT COALESCE(SUM(wa.allocated_amount), 0)
+			FROM `tabWBS Allocation` wa
+			INNER JOIN `tabPurchase Invoice` pi ON pi.name = wa.parent
+			WHERE wa.parenttype = 'Purchase Invoice'
+			  AND wa.sub_wbs_element = %s
+			  AND pi.docstatus = 1
+			  AND NOT EXISTS (
+			      SELECT 1
+			      FROM `tabPurchase Invoice Item` pii
+			      INNER JOIN `tabWBS Allocation` po_wa
+			              ON po_wa.parent = pii.purchase_order
+			             AND po_wa.parenttype = 'Purchase Order'
+			             AND po_wa.sub_wbs_element = %s
+			      WHERE pii.parent = pi.name
+			        AND pii.purchase_order IS NOT NULL
+			        AND pii.purchase_order != ''
+			  )
+			""",
+			(self.name, self.name),
+		)[0][0])
+
+		self.budget_spent = po_spent + pi_spent
 		self.calculate_totals()
 		self.save(ignore_permissions=True)

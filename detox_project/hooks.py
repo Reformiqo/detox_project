@@ -62,14 +62,19 @@ doc_events = {
 	"Purchase Order": {
 		"validate": "detox_project.detox_project.api.validate_po_budget",
 		"on_submit": "detox_project.detox_project.api.on_po_submit",
+		# ABP2-I439 — cancelling a PO must decrement WBS budget_spent.
+		"on_cancel": "detox_project.detox_project.api.on_po_submit",
 	},
 	"Purchase Invoice": {
 		"validate": "detox_project.detox_project.api.validate_pi_dedupe",
 		"on_submit": "detox_project.detox_project.api.on_pi_submit",
+		# ABP2-I439 — cancelling a PI must decrement WBS budget_spent.
+		"on_cancel": "detox_project.detox_project.api.on_pi_submit",
 	},
 	"Purchase Receipt": {
 		"validate": "detox_project.detox_project.api.validate_pr_dedupe",
 		"on_submit": "detox_project.detox_project.api.on_pr_submit",
+		"on_cancel": "detox_project.detox_project.api.on_pr_submit",
 	},
 	"Tender Management": {
 		"on_update": "detox_project.events.tender.on_update",

@@ -21,6 +21,7 @@ def after_migrate():
 	setup_fm_workflow()
 	unlock_orphaned_fm_child_rows()
 	heal_duplicate_wbs_allocations()  # ABP2-I455
+	heal_wbs_budget_spent()  # ABP2-I439
 
 
 FM_CHILD_TABLES = (
@@ -1005,6 +1006,73 @@ def heal_duplicate_wbs_allocations():
 	print(
 		f"detox_project: heal_duplicate_wbs_allocations — deleted {total_deleted} "
 		f"duplicate row(s) across {len(parents_touched)} parent doc(s)."
+	)
+
+
+def heal_wbs_budget_spent():
+	"""ABP2-I439 (Sahil 2026-06-10) — re-stamp budget_spent + budget_
+	utilization_pct on every WBS Element + Sub WBS Element that has
+	any submitted PO or PI allocation.
+
+	Two reasons:
+	  • The old refresh_spent_amounts summed Purchase Orders only.
+	    Direct PIs (no parent PO) never moved budget_spent — Sahil's
+	    'PO/PI created but budget is not getting utilized' complaint.
+	  • Even on the WBS rows where the old formula was right, the
+	    stored budget_spent may carry stale numbers from before the
+	    ABP2-I455 dedup heal (when duplicate WBS Allocations
+	    inflated the sum).
+
+	The fix itself lives in WBS Element / Sub WBS Element's
+	refresh_spent_amounts (now sums PO + PI minus PI→PO double-count).
+	This heal calls that method on every WBS row that has any
+	WBS Allocation row in the WBS Allocation table.
+
+	Idempotent — second run produces the same numbers.
+	"""
+	if not frappe.db.exists("DocType", "WBS Element"):
+		return
+
+	# Find WBS Elements touched by any WBS Allocation (PO or PI).
+	wbs_names = [r[0] for r in frappe.db.sql(
+		"""SELECT DISTINCT wbs_element
+		   FROM `tabWBS Allocation`
+		   WHERE parenttype IN ('Purchase Order', 'Purchase Invoice')
+		     AND wbs_element IS NOT NULL
+		     AND wbs_element != ''"""
+	)]
+	healed_wbs = 0
+	for n in wbs_names:
+		try:
+			frappe.get_doc("WBS Element", n).refresh_spent_amounts()
+			healed_wbs += 1
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				f"ABP2-I439 heal WBS Element {n}",
+			)
+
+	sub_wbs_names = [r[0] for r in frappe.db.sql(
+		"""SELECT DISTINCT sub_wbs_element
+		   FROM `tabWBS Allocation`
+		   WHERE parenttype IN ('Purchase Order', 'Purchase Invoice')
+		     AND sub_wbs_element IS NOT NULL
+		     AND sub_wbs_element != ''"""
+	)]
+	healed_sub = 0
+	for n in sub_wbs_names:
+		try:
+			frappe.get_doc("Sub WBS Element", n).refresh_spent_amounts()
+			healed_sub += 1
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				f"ABP2-I439 heal Sub WBS Element {n}",
+			)
+
+	print(
+		f"detox_project: heal_wbs_budget_spent — refreshed "
+		f"{healed_wbs} WBS Element(s) + {healed_sub} Sub WBS Element(s)."
 	)
 
 

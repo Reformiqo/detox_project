@@ -109,23 +109,61 @@ class WBSElement(Document):
 			)
 
 	def refresh_spent_amounts(self):
-		"""Recalculate spent from WBS Allocation table on submitted POs."""
-		spent = (
-			frappe.db.sql(
-				"""
-				SELECT COALESCE(SUM(wa.allocated_amount), 0)
-				FROM `tabWBS Allocation` wa
-				INNER JOIN `tabPurchase Order` po ON po.name = wa.parent
-				WHERE wa.parenttype = 'Purchase Order'
-				AND wa.wbs_element = %s
-				AND po.docstatus = 1
-				""",
-				self.name,
-			)[0][0]
-			or 0
-		)
+		"""ABP2-I439 (Sahil 2026-06-10): recalculate spent as committed
+		POs + booked PIs, de-double-counted.
 
-		self.budget_spent = spent
+		Before the fix this summed Purchase Orders only — direct PIs
+		(no parent PO) never moved the needle, and after ABP2-I455's
+		dedup heal the stale budget_spent values still carried the old
+		over-counted totals.
+
+		Formula now:
+		    spent = Σ submitted PO.allocated_amount
+		          + Σ submitted PI.allocated_amount
+		            WHERE the PI's items don't reference any PO already
+		            allocated to this WBS  (de-double-count)
+		"""
+		from frappe.utils import flt
+
+		po_spent = flt(frappe.db.sql(
+			"""
+			SELECT COALESCE(SUM(wa.allocated_amount), 0)
+			FROM `tabWBS Allocation` wa
+			INNER JOIN `tabPurchase Order` po ON po.name = wa.parent
+			WHERE wa.parenttype = 'Purchase Order'
+			  AND wa.wbs_element = %s
+			  AND po.docstatus = 1
+			""",
+			self.name,
+		)[0][0])
+
+		# PI sum — exclude PIs converted from a PO that's already in
+		# this WBS (the PO already counted that money). NOT EXISTS
+		# subquery short-circuits on the first matching PII row.
+		pi_spent = flt(frappe.db.sql(
+			"""
+			SELECT COALESCE(SUM(wa.allocated_amount), 0)
+			FROM `tabWBS Allocation` wa
+			INNER JOIN `tabPurchase Invoice` pi ON pi.name = wa.parent
+			WHERE wa.parenttype = 'Purchase Invoice'
+			  AND wa.wbs_element = %s
+			  AND pi.docstatus = 1
+			  AND NOT EXISTS (
+			      SELECT 1
+			      FROM `tabPurchase Invoice Item` pii
+			      INNER JOIN `tabWBS Allocation` po_wa
+			              ON po_wa.parent = pii.purchase_order
+			             AND po_wa.parenttype = 'Purchase Order'
+			             AND po_wa.wbs_element = %s
+			      WHERE pii.parent = pi.name
+			        AND pii.purchase_order IS NOT NULL
+			        AND pii.purchase_order != ''
+			  )
+			""",
+			(self.name, self.name),
+		)[0][0])
+
+		self.budget_spent = po_spent + pi_spent
 		self.calculate_totals()
 		self.save(ignore_permissions=True)
 		self.update_project_budget_summary()
