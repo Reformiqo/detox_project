@@ -129,13 +129,16 @@ function _populate_process_options(frm) {
         }
         return;
     }
-    // Get unique operation names from the linked plan's Table 2.
-    frappe.db.get_list("Detox Production Plan Operation", {
+    // Read the Process header table (Phase 7 — Detox Production Plan
+    // Process) so every Operation the user declared on the plan shows
+    // up here, even if no materials rows have been added for it yet.
+    frappe.db.get_list("Detox Production Plan Process", {
         filters: {
             parent: frm.doc.production_plan,
             parenttype: "Production Plan",
         },
-        fields: ["operation_name"],
+        fields: ["operation_name", "operation_seq"],
+        order_by: "operation_seq asc, idx asc",
         limit: 100,
     }).then((rows) => {
         const seen = new Set();
@@ -163,6 +166,21 @@ function _fetch_operation_rows(frm) {
             // Remove existing SOURCE rows (rows with s_warehouse). Keep
             // target FG rows the user already typed.
             frm.doc.items = (frm.doc.items || []).filter((row) => !row.s_warehouse);
+            if (!rows.length) {
+                frm.refresh_field("items");
+                frappe.msgprint({
+                    title: __("No materials found"),
+                    message: __(
+                        "No Materials / Service rows are defined for Operation "
+                        + "'{0}' on the linked Production Plan. Add them on the "
+                        + "plan first (per-Operation 'Add Material / Service Row' "
+                        + "button), then re-pick the Process here.",
+                        [frm.doc.custom_process_selection]
+                    ),
+                    indicator: "orange",
+                });
+                return;
+            }
             rows.forEach((src) => {
                 const item = frappe.model.add_child(frm.doc, "Stock Entry Detail", "items");
                 item.item_code = src.item_code;
