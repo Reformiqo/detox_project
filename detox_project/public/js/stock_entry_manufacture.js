@@ -17,6 +17,9 @@ frappe.ui.form.on("Stock Entry", {
         _wire_po_item_filter(frm);
     },
 
+    custom_start_time(frm) { _recompute_production_time(frm); },
+    custom_end_time(frm) { _recompute_production_time(frm); },
+
     stock_entry_type(frm) {
         _apply_phase3_visibility(frm);
     },
@@ -102,6 +105,28 @@ function _apply_phase3_visibility(frm) {
             frm.toggle_reqd(fn, true);
         }
     });
+}
+
+// Sahil Image #33 — compute Production Time in minutes from
+// (custom_end_time - custom_start_time) and force Time UOM = Minutes.
+function _recompute_production_time(frm) {
+    const start = frm.doc.custom_start_time;
+    const end = frm.doc.custom_end_time;
+    if (!start || !end) return;
+    const start_ms = frappe.datetime.str_to_obj(start).getTime();
+    const end_ms = frappe.datetime.str_to_obj(end).getTime();
+    if (!isFinite(start_ms) || !isFinite(end_ms)) return;
+    if (end_ms <= start_ms) {
+        frappe.msgprint({
+            title: __("Invalid range"),
+            message: __("End Time must be after Start Time."),
+            indicator: "orange",
+        });
+        return;
+    }
+    const minutes = (end_ms - start_ms) / 60000;
+    frm.set_value("custom_production_time", Math.round(minutes * 100) / 100);
+    frm.set_value("custom_time_uom", "Minutes");
 }
 
 // FR-11 — when the user picks a Purchase Order on a source row, restrict

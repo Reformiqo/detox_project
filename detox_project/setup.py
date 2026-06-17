@@ -1699,6 +1699,29 @@ def setup_phase3_stock_entry_manufacture():
 			"default": "Hours",
 			"insert_after": "custom_production_time",
 		},
+		# Sahil Image #33 — explicit Start + End time on the
+		# Manufacturing Process section. When both are set the client
+		# script computes the duration in minutes and stamps
+		# custom_production_time + sets custom_time_uom = Minutes.
+		{
+			"dt": "Stock Entry",
+			"fieldname": "custom_start_time",
+			"label": "Start Time",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_time_uom",
+			"description": "When this batch started.",
+		},
+		{
+			"dt": "Stock Entry",
+			"fieldname": "custom_end_time",
+			"label": "End Time",
+			"fieldtype": "Datetime",
+			"insert_after": "custom_start_time",
+			"description": (
+				"When this batch ended. Production Time is auto-computed "
+				"from (End − Start) in minutes."
+			),
+		},
 		# --- Stock Entry Detail (per row) — FR-11 / VAL-10 / L12 ---
 		{
 			"dt": "Stock Entry Detail",
