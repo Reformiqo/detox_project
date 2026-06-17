@@ -1407,6 +1407,12 @@ def setup_production_plan_no_bom():
 		# Mirror the same widening for `customer` — symmetric with project.
 		("Production Plan-customer-depends_on", "customer", "depends_on", "Code",
 		 'eval: doc.get_items_from == "Sales Order" || doc.custom_no_bom'),
+		# The PARENT 'Filters' section break also gates on
+		# `eval: doc.get_items_from`, which is empty in No-BOM mode →
+		# the whole section is hidden, taking project/customer/warehouse
+		# down with it (Sahil Image #15). Widen the section's gate too.
+		("Production Plan-filters-depends_on", "filters", "depends_on", "Code",
+		 "eval: doc.get_items_from || doc.custom_no_bom"),
 	]
 	for ps_name, field, prop, ptype, value in property_setters:
 		if frappe.db.exists("Property Setter", ps_name):
