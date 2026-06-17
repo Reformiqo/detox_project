@@ -111,6 +111,44 @@ def get_fg_defaults(production_plan: str, item_code: str) -> dict:
 
 
 # --------------------------------------------------------------------------
+# Inherit dimensions from the linked Production Plan
+# --------------------------------------------------------------------------
+def inherit_se_from_production_plan(doc, method=None):
+    """Sahil 2026-06-17 — when the SE is linked to a Production Plan,
+    pull CC + Project off the plan onto the SE header AND propagate to
+    every item row that's missing a cost_center. This stops ERPNext's
+    get_default_cost_center from ever needing to fall back to
+    Company.default_cost_center (the source of the 'Please set default
+    Default Cost Center in Company …' throw).
+
+    Fires on validate so it runs BEFORE ERPNext's standard validation.
+    """
+    if not _stock_entry_is_in_scope(doc):
+        return
+    plan_name = doc.get("production_plan")
+    if not plan_name or not frappe.db.exists("Production Plan", plan_name):
+        return
+    plan = frappe.db.get_value(
+        "Production Plan", plan_name,
+        ["custom_cost_center", "project"],
+        as_dict=True,
+    ) or {}
+    cc = plan.get("custom_cost_center")
+    pj = plan.get("project")
+    if cc and not doc.get("custom_cost_center"):
+        doc.custom_cost_center = cc
+    if pj and not doc.get("project"):
+        doc.project = pj
+    # Propagate to every item row — blank rows inherit, populated rows
+    # are left alone.
+    for row in (doc.get("items") or []):
+        if cc and not row.get("cost_center"):
+            row.cost_center = cc
+        if pj and not row.get("project"):
+            row.project = pj
+
+
+# --------------------------------------------------------------------------
 # Validate hook
 # --------------------------------------------------------------------------
 def validate_stock_entry_manufacture(doc, method=None):

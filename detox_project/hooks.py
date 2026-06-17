@@ -114,8 +114,18 @@ doc_events = {
 		"validate": "detox_project.detox_project.overrides.cc_project_guard.validate_work_order",
 	},
 	"Stock Entry": {
-		"before_save": "detox_project.detox_project.overrides.cc_project_guard.inherit_se_from_work_order",
+		"before_save": [
+			"detox_project.detox_project.overrides.cc_project_guard.inherit_se_from_work_order",
+			# Sahil 2026-06-17 — pull CC + Project from the linked Production
+			# Plan onto the SE header + every item row, so ERPNext never falls
+			# back to Company.default_cost_center.
+			"detox_project.detox_project.overrides.stock_entry_manufacture.inherit_se_from_production_plan",
+		],
 		"validate": [
+			# Same Production-Plan inheritance runs on validate too — covers
+			# the case where the SE is being saved after the user manually
+			# changes production_plan on the form.
+			"detox_project.detox_project.overrides.stock_entry_manufacture.inherit_se_from_production_plan",
 			"detox_project.detox_project.overrides.cc_project_guard.validate_stock_entry",
 			# ABP2-I419 Phase 3 — Mfg-flow validations + rollup.
 			"detox_project.detox_project.overrides.stock_entry_manufacture.validate_stock_entry_manufacture",
