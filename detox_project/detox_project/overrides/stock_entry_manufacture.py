@@ -14,6 +14,16 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+# ABP2-I466 (Raj Tiwari 2026-06-18) — _stock_entry_is_in_scope lives in
+# the sibling cc_project_guard module. Without this import the symbol
+# was undefined at validate-time inside inherit_se_from_production_plan,
+# and EVERY Stock Entry save threw `NameError: name
+# '_stock_entry_is_in_scope' is not defined` (even Material Receipt
+# rows that have nothing to do with Production Plan logic).
+from detox_project.detox_project.overrides.cc_project_guard import (
+    _stock_entry_is_in_scope,
+)
+
 
 # Stock Entry types covered by Phase 3 logic.
 MFG_TYPES = {
