@@ -41,7 +41,8 @@
    "in_list_view": 1,
    "label": "Allocated Amount",
    "reqd": 1,
-   "columns": 2
+   "columns": 2,
+   "precision": "2"
   },
   {
    "fieldname": "column_break_1",

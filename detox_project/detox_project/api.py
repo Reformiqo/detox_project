@@ -1,6 +1,56 @@
 import frappe
 from frappe import _
 from frappe.utils import flt
+from decimal import Decimal, ROUND_HALF_UP
+
+
+# ---------------------------------------------------------------------------
+# ABP2-I457 reopen (Sahil 2026-06-16) — kill IEEE-754 float drift on
+# WBS Allocation.allocated_amount before the framework's AOS guard runs.
+#
+# The bug: editing a SUBMITTED Material Request / PO / PI / PR throws
+#   Cannot Update After Submit
+#   Row #1: Not allowed to change Allocated Amount after submission
+#   from 3267826.12 to 3267826.11999999996
+# (See ticket I457 screenshot.) Root cause: the form-side accumulation
+# of item amounts (Σ items.amount per WBS bucket) lands on a float
+# whose shortest decimal repr is 3267826.1199999996 — a *different*
+# IEEE 754 double than 3267826.12. The DB stores the original via
+# decimal(21,9), comes back as Decimal('3267826.12'), Frappe's
+# _fix_numeric_types casts that to float(Decimal('3267826.12')) =
+# 3267826.12. Comparison 3267826.12 != 3267826.1199999996 → AOS throw.
+#
+# The prior fix gated the JS recompute on docstatus==0, but the drifted
+# value was already persisted at SUBMIT time, so the doc itself carries
+# the bad number — and re-opening it ships that number back unchanged.
+# Re-rounding at save time also fixes the legacy data on next edit.
+#
+# Decimal('3267826.1199999996').quantize(Decimal('0.01'), HALF_UP)
+#   = Decimal('3267826.12')
+# float(Decimal('3267826.12'))
+#   = 3267826.12  (the same float the DB read returns after _fix_…)
+# AOS guard now compares 3267826.12 == 3267826.12 → passes.
+# ---------------------------------------------------------------------------
+_TWO_PLACES = Decimal("0.01")
+
+
+def _round_allocated_amounts(doc):
+    """Quantize every custom_wbs_allocations row's allocated_amount to
+    2 decimal places using Decimal half-up, then cast back to float so
+    Frappe's downstream type checks still match. Idempotent — running
+    it twice yields the same value."""
+    if not doc.get("custom_wbs_allocations"):
+        return
+    for row in doc.custom_wbs_allocations:
+        if row.allocated_amount in (None, ""):
+            continue
+        rounded = float(
+            Decimal(str(row.allocated_amount)).quantize(
+                _TWO_PLACES, rounding=ROUND_HALF_UP
+            )
+        )
+        if row.allocated_amount != rounded:
+            row.allocated_amount = rounded
 
 # ---------------------------------------------------------------------------
 # Document Event Hooks
@@ -101,6 +151,10 @@ def dedupe_wbs_allocations(doc, method=None):
 
 def validate_material_request_budget(doc, method):
 	"""Soft warning per WBS allocation row if budget nearing limit."""
+	# ABP2-I457 reopen — kill float drift on allocated_amount BEFORE the
+	# AOS check fires (must run inside validate(), which precedes
+	# validate_update_after_submit in Frappe's _save() ordering).
+	_round_allocated_amounts(doc)
 	dedupe_wbs_allocations(doc)
 	if not doc.get("custom_wbs_allocations"):
 		return
@@ -116,6 +170,7 @@ def validate_material_request_budget(doc, method):
 
 def validate_po_budget(doc, method):
 	"""Hard block per WBS allocation row if budget exceeded."""
+	_round_allocated_amounts(doc)  # ABP2-I457 reopen — AOS-safe.
 	dedupe_wbs_allocations(doc)
 	if not doc.get("custom_wbs_allocations"):
 		return
@@ -131,11 +186,13 @@ def validate_po_budget(doc, method):
 
 def validate_pi_dedupe(doc, method):
 	"""Purchase Invoice has no budget validator, but still needs dedup."""
+	_round_allocated_amounts(doc)  # ABP2-I457 reopen — AOS-safe.
 	dedupe_wbs_allocations(doc)
 
 
 def validate_pr_dedupe(doc, method):
 	"""Purchase Receipt has no budget validator, but still needs dedup."""
+	_round_allocated_amounts(doc)  # ABP2-I457 reopen — AOS-safe.
 	dedupe_wbs_allocations(doc)
 
 
