@@ -1487,6 +1487,16 @@ def setup_phase2_cc_project_enforcement():
 	custom_fields = [
 		# Stock Entry header — CC (FR-22, the only target detox_waste_management's
 		# enforcer skipped because the native field is absent).
+		#
+		# ABP2-I466 followup (Sahil 2026-06-24): scope the requirement
+		# (and visibility) to manufacturing-flow stock_entry_types only.
+		# Without this scope, every Material Receipt / Material Issue
+		# form showed TWO required Cost Center fields side-by-side (the
+		# stock cost_center forced reqd=1 by
+		# detox_waste_management.enforce_project_cost_center_mandatory,
+		# plus this custom one) — bad UX and blocked save because the
+		# user couldn't tell which to fill. The in-scope set mirrors
+		# `_stock_entry_is_in_scope` exactly.
 		{
 			"dt": "Stock Entry",
 			"fieldname": "custom_cost_center",
@@ -1494,7 +1504,17 @@ def setup_phase2_cc_project_enforcement():
 			"fieldtype": "Link",
 			"options": "Cost Center",
 			"insert_after": "project",
-			"reqd": 1,
+			"reqd": 0,
+			"mandatory_depends_on": (
+				"eval:doc.stock_entry_type in "
+				"['Manufacture','Material Transfer for Manufacture',"
+				"'Repack','Send to Subcontractor']"
+			),
+			"depends_on": (
+				"eval:doc.stock_entry_type in "
+				"['Manufacture','Material Transfer for Manufacture',"
+				"'Repack','Send to Subcontractor']"
+			),
 			"description": (
 				"Header Cost Center for Manufacturing-flow Stock Entries. "
 				"Inherited from the linked Work Order when present (L06)."
