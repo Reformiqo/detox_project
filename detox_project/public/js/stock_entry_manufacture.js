@@ -260,3 +260,27 @@ function _fetch_operation_rows(frm) {
         },
     });
 }
+
+
+// ABP2-I419 reopen item #7 (Raj 2026-06-19) — Additional Cost section
+// got Qty + Rate columns. When either changes, recompute Amount = Qty
+// × Rate so the user doesn't have to re-do the arithmetic. The Amount
+// cell stays editable for cases where qty/rate aren't known and the
+// user only has the rolled-up cost — only overwrite Amount when BOTH
+// custom_qty and custom_rate are non-zero. The child doctype is
+// shared (`Landed Cost Taxes and Charges` is also used by Landed Cost
+// Voucher); this handler is gated on the parent type being Stock
+// Entry so the LCV form isn't affected.
+function _recompute_addl_cost_amount(frm, cdt, cdn) {
+    if (frm.doctype !== "Stock Entry") return;
+    const row = locals[cdt][cdn];
+    const qty = flt(row.custom_qty);
+    const rate = flt(row.custom_rate);
+    if (qty && rate) {
+        frappe.model.set_value(cdt, cdn, "amount", qty * rate);
+    }
+}
+frappe.ui.form.on("Landed Cost Taxes and Charges", {
+    custom_qty: _recompute_addl_cost_amount,
+    custom_rate: _recompute_addl_cost_amount,
+});

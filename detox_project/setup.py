@@ -1807,6 +1807,35 @@ def setup_phase3_stock_entry_manufacture():
 			"columns": 2,
 			"description": "Specific PO line — used to fetch the actual procured rate.",
 		},
+		# ABP2-I419 reopen item #7 (Raj 2026-06-19) — Additional Cost
+		# section needs separate Qty + Rate columns. The native child
+		# (Landed Cost Taxes and Charges) only stores Amount; the user
+		# wanted to capture how that amount was derived. Auto-compute
+		# amount = qty * rate via client script when both are set; the
+		# Amount cell stays editable for cases where qty/rate aren't
+		# known and the user only has the rolled-up cost.
+		{
+			"dt": "Landed Cost Taxes and Charges",
+			"fieldname": "custom_qty",
+			"label": "Qty",
+			"fieldtype": "Float",
+			"insert_after": "expense_account",
+			"in_list_view": 1,
+			"columns": 1,
+			"non_negative": 1,
+			"description": "Quantity for this additional cost line. Amount auto-computes as Qty × Rate when both are set.",
+		},
+		{
+			"dt": "Landed Cost Taxes and Charges",
+			"fieldname": "custom_rate",
+			"label": "Rate",
+			"fieldtype": "Currency",
+			"insert_after": "custom_qty",
+			"in_list_view": 1,
+			"columns": 1,
+			"options": "currency",
+			"description": "Unit rate for this additional cost line. Amount = Qty × Rate.",
+		},
 	]
 	created = 0
 	for spec in custom_fields:
