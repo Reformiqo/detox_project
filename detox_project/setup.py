@@ -1762,6 +1762,25 @@ def setup_phase3_stock_entry_manufacture():
 				"from (End − Start) in minutes."
 			),
 		},
+		# ABP2-I419 reopen item #3 (Raj 2026-06-19) — capture Downtime
+		# at the Stock Entry level. Float in the same UOM as Production
+		# Time (custom_time_uom). Inherits the Manufacturing Process
+		# section's depends_on so it only renders on MFG-flow SE types
+		# (Manufacture / Material Transfer for Manufacture / Repack).
+		{
+			"dt": "Stock Entry",
+			"fieldname": "custom_downtime",
+			"label": "Downtime",
+			"fieldtype": "Float",
+			"insert_after": "custom_end_time",
+			"non_negative": 1,
+			"default": "0",
+			"description": (
+				"Downtime during this batch in the same UOM as Production "
+				"Time. Does not affect (End − Start) computation; recorded "
+				"for production-efficiency reporting."
+			),
+		},
 		# --- Stock Entry Detail (per row) — FR-11 / VAL-10 / L12 ---
 		{
 			"dt": "Stock Entry Detail",
@@ -1995,6 +2014,10 @@ def _production_day_summary_html() -> str:
   <tr>
     <td style="padding:4px 8px;border:1px solid #ddd"><b>Production Time</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.get("custom_production_time") or '-' }} {{ doc.get("custom_time_uom") or '' }}</td>
     <td style="padding:4px 8px;border:1px solid #ddd"><b>From Warehouse</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.from_warehouse or '-' }}</td>
+  </tr>
+  <tr>
+    <td style="padding:4px 8px;border:1px solid #ddd"><b>Downtime</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.get("custom_downtime") or '-' }} {{ doc.get("custom_time_uom") or '' }}</td>
+    <td style="padding:4px 8px;border:1px solid #ddd"></td><td style="padding:4px 8px;border:1px solid #ddd"></td>
   </tr>
 </table>
 
