@@ -1505,36 +1505,39 @@ def setup_phase2_cc_project_enforcement():
 			"options": "Cost Center",
 			"insert_after": "project",
 			"reqd": 0,
-			# ABP2-I466 re-reopen #2 (Sahil 2026-06-25): the original
-			# expression used Python `in` syntax (`doc.x in [a,b,c]`).
-			# Python evaluates that as membership (True for a/b/c), but
-			# JavaScript `in` checks for own-property existence on the
-			# RHS object — so for an array literal it returns False for
-			# every string key. Result: server-side cc_project_guard
-			# threw "Cost Center is mandatory on the Stock Entry" while
-			# the field was HIDDEN in the browser (depends_on evaluated
-			# to False). The user couldn't see the field to fill it.
-			# See [[depends-on-must-be-pure-js]]. Re-written as an
-			# explicit OR chain that works in both languages — Frappe's
-			# server-side mandatory check only looks at reqd=1 anyway
-			# (mandatory_depends_on is consulted client-side for the red
-			# asterisk; the server-side throw comes from
-			# cc_project_guard.validate_stock_entry).
+			# ABP2-I466 re-reopen #3 (Sahil 2026-06-25): user explicitly
+			# asked to see the Cost Center on every Stock Entry type
+			# (Material Receipt / Issue / Transfer included). The
+			# previous followup that scoped this with depends_on was
+			# based on a misdiagnosis — meta probe confirms
+			# custom_cost_center is the ONLY Cost Center field on the
+			# Stock Entry header (no standard `cost_center` exists there,
+			# no other Custom Field). Hiding it left those SE types with
+			# no Cost Center field anywhere.
+			#
+			# Field is now always visible. mandatory_depends_on still
+			# scopes the red-asterisk (and the server-side throw via
+			# cc_project_guard.validate_stock_entry) to manufacturing-
+			# flow types. Non-MFG types can fill it or leave it blank.
+			#
+			# mandatory_depends_on uses the same JS-compatible OR chain
+			# fixed in re-reopen #2 (not `in [...]` which is Python only).
 			"mandatory_depends_on": (
 				"eval:doc.stock_entry_type=='Manufacture' "
 				"|| doc.stock_entry_type=='Material Transfer for Manufacture' "
 				"|| doc.stock_entry_type=='Repack' "
 				"|| doc.stock_entry_type=='Send to Subcontractor'"
 			),
-			"depends_on": (
-				"eval:doc.stock_entry_type=='Manufacture' "
-				"|| doc.stock_entry_type=='Material Transfer for Manufacture' "
-				"|| doc.stock_entry_type=='Repack' "
-				"|| doc.stock_entry_type=='Send to Subcontractor'"
-			),
+			# Explicit "" so the upsert clears any prior depends_on value
+			# (the loop in setup_phase2_cc_project_enforcement only touches
+			# keys present in the spec dict).
+			"depends_on": "",
 			"description": (
-				"Header Cost Center for Manufacturing-flow Stock Entries. "
-				"Inherited from the linked Work Order when present (L06)."
+				"Header Cost Center. Required on Manufacture / Material "
+				"Transfer for Manufacture / Repack / Send to "
+				"Subcontractor; optional on Material Receipt / Issue / "
+				"Transfer. Inherited from the linked Work Order when "
+				"present (L06)."
 			),
 		},
 		# Phase 2 proxy field idea (hidden cost_center on Stock Entry
