@@ -1505,15 +1505,32 @@ def setup_phase2_cc_project_enforcement():
 			"options": "Cost Center",
 			"insert_after": "project",
 			"reqd": 0,
+			# ABP2-I466 re-reopen #2 (Sahil 2026-06-25): the original
+			# expression used Python `in` syntax (`doc.x in [a,b,c]`).
+			# Python evaluates that as membership (True for a/b/c), but
+			# JavaScript `in` checks for own-property existence on the
+			# RHS object — so for an array literal it returns False for
+			# every string key. Result: server-side cc_project_guard
+			# threw "Cost Center is mandatory on the Stock Entry" while
+			# the field was HIDDEN in the browser (depends_on evaluated
+			# to False). The user couldn't see the field to fill it.
+			# See [[depends-on-must-be-pure-js]]. Re-written as an
+			# explicit OR chain that works in both languages — Frappe's
+			# server-side mandatory check only looks at reqd=1 anyway
+			# (mandatory_depends_on is consulted client-side for the red
+			# asterisk; the server-side throw comes from
+			# cc_project_guard.validate_stock_entry).
 			"mandatory_depends_on": (
-				"eval:doc.stock_entry_type in "
-				"['Manufacture','Material Transfer for Manufacture',"
-				"'Repack','Send to Subcontractor']"
+				"eval:doc.stock_entry_type=='Manufacture' "
+				"|| doc.stock_entry_type=='Material Transfer for Manufacture' "
+				"|| doc.stock_entry_type=='Repack' "
+				"|| doc.stock_entry_type=='Send to Subcontractor'"
 			),
 			"depends_on": (
-				"eval:doc.stock_entry_type in "
-				"['Manufacture','Material Transfer for Manufacture',"
-				"'Repack','Send to Subcontractor']"
+				"eval:doc.stock_entry_type=='Manufacture' "
+				"|| doc.stock_entry_type=='Material Transfer for Manufacture' "
+				"|| doc.stock_entry_type=='Repack' "
+				"|| doc.stock_entry_type=='Send to Subcontractor'"
 			),
 			"description": (
 				"Header Cost Center for Manufacturing-flow Stock Entries. "
