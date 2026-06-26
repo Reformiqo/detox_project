@@ -7,6 +7,27 @@ frappe.ui.form.on("Sub WBS Element", {
 			frm.dashboard.add_indicator(__("Utilization: {0}%", [pct.toFixed(1)]), color);
 		}
 
+		// ABP2-I416 — surface the inherited closure status. Sub WBS
+		// closure is parent-driven (cascade from WBS Element close)
+		// per FR-08, so we don't expose Close/Reopen buttons here —
+		// just the indicator so users can see why MR/PO/PI are blocked.
+		if (!frm.is_new()) {
+			const closed = frm.doc.custom_budget_closure_status === "Closed";
+			frm.dashboard.add_indicator(
+				closed ? __("Budget Closure: Closed (inherited)")
+				       : __("Budget Closure: Open"),
+				closed ? "red" : "green");
+			if (closed && frm.doc.custom_closed_reason) {
+				const on = frm.doc.custom_closed_on
+					? frappe.datetime.str_to_user(frm.doc.custom_closed_on) : "";
+				const by = frm.doc.custom_closed_by || "";
+				frm.set_intro(
+					__("Budget Closed on {0} by {1} via parent WBS. Reason: {2}",
+						[on, by, frm.doc.custom_closed_reason]),
+					"red");
+			}
+		}
+
 		if (frm.doc.status === "Active" && !frm.is_new()) {
 			frm.add_custom_button(
 				__("Material Request"),
