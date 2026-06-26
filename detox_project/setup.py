@@ -2348,11 +2348,25 @@ def heal_legacy_se_cost_center_scripts():
 	revert the substitution so legacy scripts that expected
 	`cost_center` work again.
 
+	ERPNext-version-aware: if the standard `cost_center` field doesn't
+	exist on this bench (e.g. local on 16.6), DO NOT revert — leaving
+	the scripts referencing `custom_cost_center` is harmless (the
+	field also doesn't exist, but `frm.set_value("custom_cost_center", …)`
+	is a silent no-op vs `set_value("cost_center", …)` which throws
+	"Field cost_center not found" on legacy benches).
+
 	Idempotent — re-runs are no-ops once the patterns are gone.
 	"""
 	import re
 
 	if not frappe.db.exists("DocType", "Client Script"):
+		return
+
+	se_meta = frappe.get_meta("Stock Entry", cached=False)
+	if not se_meta.has_field("cost_center"):
+		# Standard field absent (e.g. local on ERPNext 16.6). Don't
+		# revert — would create the "Field cost_center not found" form
+		# error the user reported 2026-06-26.
 		return
 
 	# Reverse patterns — turn the OLD heal's substitutions back to
@@ -2538,13 +2552,21 @@ def diagnose_stock_entry_cost_center():
 # below.
 
 def heal_stock_entry_cost_center_field_order():
-	"""SE refactor (Sahil 2026-06-26) — REVERSE direction.
+	"""SE refactor (Sahil 2026-06-26) — REVERSE direction with
+	ERPNext-version-aware insert.
 
 	Previously this function inserted `custom_cost_center` into the
-	field_order PS in place of the orphan `cost_center`. Now that the
-	standard `cost_center` field is back on Stock Entry (ERPNext 16.25+),
-	the right slot is `cost_center` and `custom_cost_center` is what we
-	need to DROP from the field_order.
+	field_order PS in place of the orphan `cost_center`. Now that
+	ERPNext 16.25+ ships the standard `cost_center` field on Stock
+	Entry, the right slot is `cost_center` and `custom_cost_center`
+	is what we need to DROP from the field_order.
+
+	Defensive on local benches running ERPNext < 16.25 (where the
+	standard field doesn't exist yet): if `cost_center` isn't a real
+	field in the meta, DON'T insert it into the field_order — Frappe
+	throws "Field cost_center not found" on form load when the PS
+	references a non-existent fieldname. Just drop `custom_cost_center`
+	and leave the slot empty in that case.
 
 	Idempotent: re-running on an already-clean field_order is a no-op.
 	"""
@@ -2564,32 +2586,57 @@ def heal_stock_entry_cost_center_field_order():
 	if not isinstance(order, list):
 		return
 
+	# Check the live meta to know whether the standard `cost_center`
+	# field actually exists on this bench's Stock Entry. We have to
+	# bypass the cache because we may have just rewritten the meta in
+	# an earlier setup step.
+	se_meta = frappe.get_meta("Stock Entry", cached=False)
+	standard_field_exists = se_meta.has_field("cost_center")
+
 	had_custom = "custom_cost_center" in order
-	had_standard = "cost_center" in order
+	had_standard_in_order = "cost_center" in order
 
-	if not had_custom and had_standard:
-		return  # already clean — standard present, custom gone
+	# Decide what target should be in the slot.
+	target = "cost_center" if standard_field_exists else None
 
-	# Drop every occurrence of the custom field.
-	cleaned = [fn for fn in order if fn != "custom_cost_center"]
+	# Already-clean check.
+	if not had_custom:
+		# custom gone — but the standard may have been put back at a
+		# different idx and we don't need to do anything.
+		# Also drop any orphan `cost_center` if the standard field
+		# doesn't actually exist.
+		if had_standard_in_order and not standard_field_exists:
+			cleaned = [fn for fn in order if fn != "cost_center"]
+		else:
+			return
+	else:
+		# Drop every occurrence of the custom field.
+		cleaned = [fn for fn in order if fn != "custom_cost_center"]
 
-	# Insert `cost_center` where `custom_cost_center` used to be if the
-	# standard isn't already present.
-	if not had_standard and had_custom:
+	# If standard field exists and isn't in the order, insert it where
+	# `custom_cost_center` used to be (or after `project` as fallback).
+	if target and target not in cleaned:
 		try:
-			c_idx = order.index("custom_cost_center")
+			c_idx = order.index("custom_cost_center") if had_custom else None
 		except ValueError:
 			c_idx = None
 		if c_idx is None:
 			try:
 				p_idx = cleaned.index("project")
-				cleaned.insert(p_idx + 1, "cost_center")
+				cleaned.insert(p_idx + 1, target)
 			except ValueError:
-				cleaned.append("cost_center")
+				cleaned.append(target)
 		else:
 			before = order[:c_idx]
 			cleaned_anchor = sum(1 for fn in before if fn != "custom_cost_center")
-			cleaned.insert(cleaned_anchor, "cost_center")
+			cleaned.insert(cleaned_anchor, target)
+
+	# If the standard field does NOT exist on this bench AND was already
+	# in the order (from a prior heal run on a different version), drop
+	# it — otherwise Frappe throws "Field cost_center not found" on form
+	# render.
+	if not standard_field_exists:
+		cleaned = [fn for fn in cleaned if fn != "cost_center"]
 
 	if cleaned != order:
 		fo_doc.value = _json.dumps(cleaned)
@@ -2598,7 +2645,7 @@ def heal_stock_entry_cost_center_field_order():
 		print(
 			f"detox_project: heal_stock_entry_cost_center_field_order "
 			f"— rewrote field_order (custom_cost_center dropped: {had_custom}, "
-			f"cost_center inserted: {not had_standard})."
+			f"cost_center {'inserted' if target and target in cleaned else 'dropped (no meta field)'})."
 		)
 
 
