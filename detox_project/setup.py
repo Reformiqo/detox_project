@@ -30,6 +30,11 @@ def after_migrate():
 	setup_phase6_cylinder_deposit()  # ABP2-I419 Phase 6
 	setup_phase7_process_table()  # ABP2-I419 Phase 7
 	heal_legacy_se_cost_center_scripts()  # ABP2-I419 Image #27
+	# ABP2 SE Cost Center refactor (Sahil 2026-06-26) — drop the legacy
+	# Stock Entry-custom_cost_center CF + clean up the field_order PS so
+	# only the standard `cost_center` field renders post-ERPNext 16.25.
+	drop_se_custom_cost_center_field()
+	heal_stock_entry_cost_center_field_order()
 
 
 FM_CHILD_TABLES = (
@@ -1485,65 +1490,26 @@ def setup_phase2_cc_project_enforcement():
 	Idempotent.
 	"""
 	custom_fields = [
-		# Stock Entry header — CC (FR-22, the only target detox_waste_management's
-		# enforcer skipped because the native field is absent).
+		# ABP2 SE Cost Center refactor (Sahil 2026-06-26) — ERPNext 16.25
+		# now ships a standard `cost_center` field on the Stock Entry
+		# header (we were on 16.6 locally when the original CF was added,
+		# so the duplicate wasn't visible to us; prod was already on 16.25
+		# and showed BOTH Cost Centers).
 		#
-		# ABP2-I466 followup (Sahil 2026-06-24): scope the requirement
-		# (and visibility) to manufacturing-flow stock_entry_types only.
-		# Without this scope, every Material Receipt / Material Issue
-		# form showed TWO required Cost Center fields side-by-side (the
-		# stock cost_center forced reqd=1 by
-		# detox_waste_management.enforce_project_cost_center_mandatory,
-		# plus this custom one) — bad UX and blocked save because the
-		# user couldn't tell which to fill. The in-scope set mirrors
-		# `_stock_entry_is_in_scope` exactly.
-		{
-			"dt": "Stock Entry",
-			"fieldname": "custom_cost_center",
-			"label": "Cost Center",
-			"fieldtype": "Link",
-			"options": "Cost Center",
-			"insert_after": "project",
-			"reqd": 0,
-			# ABP2-I466 re-reopen #3 (Sahil 2026-06-25): user explicitly
-			# asked to see the Cost Center on every Stock Entry type
-			# (Material Receipt / Issue / Transfer included). The
-			# previous followup that scoped this with depends_on was
-			# based on a misdiagnosis — meta probe confirms
-			# custom_cost_center is the ONLY Cost Center field on the
-			# Stock Entry header (no standard `cost_center` exists there,
-			# no other Custom Field). Hiding it left those SE types with
-			# no Cost Center field anywhere.
-			#
-			# Field is now always visible. mandatory_depends_on still
-			# scopes the red-asterisk (and the server-side throw via
-			# cc_project_guard.validate_stock_entry) to manufacturing-
-			# flow types. Non-MFG types can fill it or leave it blank.
-			#
-			# mandatory_depends_on uses the same JS-compatible OR chain
-			# fixed in re-reopen #2 (not `in [...]` which is Python only).
-			"mandatory_depends_on": (
-				"eval:doc.stock_entry_type=='Manufacture' "
-				"|| doc.stock_entry_type=='Material Transfer for Manufacture' "
-				"|| doc.stock_entry_type=='Repack' "
-				"|| doc.stock_entry_type=='Send to Subcontractor'"
-			),
-			# Explicit "" so the upsert clears any prior depends_on value
-			# (the loop in setup_phase2_cc_project_enforcement only touches
-			# keys present in the spec dict).
-			"depends_on": "",
-			"description": (
-				"Header Cost Center. Required on Manufacture / Material "
-				"Transfer for Manufacture / Repack / Send to "
-				"Subcontractor; optional on Material Receipt / Issue / "
-				"Transfer. Inherited from the linked Work Order when "
-				"present (L06)."
-			),
-		},
-		# Phase 2 proxy field idea (hidden cost_center on Stock Entry
-		# header) abandoned — Frappe rejects hidden+mandatory-without-
-		# default at validate time. Heal_legacy_se_client_scripts below
-		# rewrites the two legacy DB-resident scripts instead.
+		# Resolution: drop the detox_project `custom_cost_center` CF on
+		# Stock Entry entirely; use the standard `cost_center` field as
+		# the canonical one. The Stock Entry-specific Custom Field is
+		# now removed from this spec list; heal_drop_se_custom_cost_center
+		# (below) deletes the existing CF on benches that had it.
+		#
+		# Cascade callers (gate_pass, cc_project_guard, stock_entry_
+		# manufacture) now write to `cost_center` instead of
+		# `custom_cost_center`.
+		#
+		# Work Order, Production Plan, Subcontracting Order keep their
+		# `custom_cost_center` CF because those doctypes have no
+		# standard cost_center header field.
+		#
 		# Work Order header — CC (no native field on Work Order).
 		{
 			"dt": "Work Order",
@@ -2037,7 +2003,7 @@ def _production_day_summary_html() -> str:
     <td style="padding:4px 8px;border:1px solid #ddd"><b>Process</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.get("custom_process_selection") or '-' }}</td>
   </tr>
   <tr>
-    <td style="padding:4px 8px;border:1px solid #ddd"><b>Cost Center</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.get("custom_cost_center") or doc.cost_center or '-' }}</td>
+    <td style="padding:4px 8px;border:1px solid #ddd"><b>Cost Center</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.cost_center or '-' }}</td>
     <td style="padding:4px 8px;border:1px solid #ddd"><b>Project</b></td><td style="padding:4px 8px;border:1px solid #ddd">{{ doc.project or '-' }}</td>
   </tr>
   <tr>
@@ -2367,29 +2333,20 @@ def setup_phase7_process_table():
 
 
 # ---------------------------------------------------------------------------
-# ABP2-I419 Image #27 — patch legacy DB-resident Client Scripts on
-# Stock Entry that call frm.set_value("cost_center", …) — Phase 2
-# replaced the native header field with custom_cost_center, so the
-# legacy calls throw 'Field cost_center not found'. Rewrite their
-# script content in place.
+# ABP2 SE Cost Center refactor (Sahil 2026-06-26) — reverse the previous
+# legacy-script patcher: ERPNext 16.25+ has a real `cost_center` field
+# on Stock Entry header, so legacy Client Scripts that reference it work
+# correctly out of the box. This function now (a) reverts any prior
+# `custom_cost_center` substitution back to `cost_center` and (b) is
+# kept for idempotent self-healing on benches that already ran the
+# previous (now-incorrect) version of this patcher.
 # ---------------------------------------------------------------------------
 def heal_legacy_se_cost_center_scripts():
-	"""Patch DB-resident Client Scripts that target the absent
-	`cost_center` HEADER field on Stock Entry. Phase 2 replaced it with
-	`custom_cost_center`; the native field doesn't exist on v16 SE
-	header, so every set_value / set_query / frm.doc.cost_center call
-	on the header throws 'Field cost_center not found' (Sahil Image
-	#28/29).
-
-	Three header-level patterns get rewritten across every enabled
-	Client Script with dt='Stock Entry':
-	  - frm.set_value("cost_center", …)   → "custom_cost_center"
-	  - frm.set_query("cost_center", …)   → "custom_cost_center"
-	  - frm.doc.cost_center                → frm.doc.custom_cost_center
-	  - top-level hook key `cost_center:` inside form.on('Stock Entry')
-	    → custom_cost_center: (preserves the same handler inside
-	    Stock Entry Item handlers, which DOES have a real cost_center
-	    on the child row).
+	"""Patch DB-resident Client Scripts that the OLD heal previously
+	rewrote `cost_center` → `custom_cost_center` on. Now that the
+	standard `cost_center` field is back on Stock Entry (ERPNext 16.25+),
+	revert the substitution so legacy scripts that expected
+	`cost_center` work again.
 
 	Idempotent — re-runs are no-ops once the patterns are gone.
 	"""
@@ -2398,26 +2355,18 @@ def heal_legacy_se_cost_center_scripts():
 	if not frappe.db.exists("DocType", "Client Script"):
 		return
 
-	header_patterns = [
-		(re.compile(r"set_value\(\s*(['\"])cost_center\1"),
-		 "set_value(\"custom_cost_center\""),
-		(re.compile(r"set_query\(\s*(['\"])cost_center\1"),
-		 "set_query(\"custom_cost_center\""),
-		(re.compile(r"frm\.doc\.cost_center\b"),
-		 "frm.doc.custom_cost_center"),
+	# Reverse patterns — turn the OLD heal's substitutions back to
+	# `cost_center`. We DO NOT touch arbitrary `custom_cost_center`
+	# references that legitimately exist for other doctypes; we only
+	# target the specific patterns this app previously installed.
+	reverse_patterns = [
+		(re.compile(r"set_value\(\s*(['\"])custom_cost_center\1"),
+		 "set_value(\"cost_center\""),
+		(re.compile(r"set_query\(\s*(['\"])custom_cost_center\1"),
+		 "set_query(\"cost_center\""),
+		(re.compile(r"frm\.doc\.custom_cost_center\b"),
+		 "frm.doc.cost_center"),
 	]
-	# Hook-name rewrite — match a top-level handler key
-	# `cost_center: function(...)` that appears after a `,` or `{`,
-	# with arbitrary whitespace. This catches the form.on header-level
-	# hook regardless of nested braces in earlier handlers. We then
-	# REJECT matches that follow a 'Stock Entry Item' form.on block —
-	# the child row legitimately has a cost_center field.
-	hook_pattern = re.compile(
-		r"([,{]\s*)cost_center(\s*:\s*function)"
-	)
-	item_form_on = re.compile(
-		r"frappe\.ui\.form\.on\(\s*['\"]Stock Entry Item['\"]"
-	)
 
 	targets = frappe.get_all(
 		"Client Script",
@@ -2428,16 +2377,8 @@ def heal_legacy_se_cost_center_scripts():
 	for cs in targets:
 		original = cs.script or ""
 		new = original
-		for pat, repl in header_patterns:
+		for pat, repl in reverse_patterns:
 			new = pat.sub(repl, new)
-		# Replace top-level cost_center: handler keys, but ONLY in the
-		# region before any 'Stock Entry Item' form.on block (the child
-		# row genuinely has a cost_center field there).
-		item_start = item_form_on.search(new)
-		boundary = item_start.start() if item_start else len(new)
-		head, tail = new[:boundary], new[boundary:]
-		head = hook_pattern.sub(r"\1custom_cost_center\2", head)
-		new = head + tail
 		if new == original:
 			continue
 		frappe.db.set_value(
@@ -2448,5 +2389,235 @@ def heal_legacy_se_cost_center_scripts():
 		frappe.clear_cache(doctype="Stock Entry")
 	print(
 		f"detox_project: heal_legacy_se_cost_center_scripts — "
-		f"patched {patched} script(s)."
+		f"reverted {patched} script(s) back to cost_center."
+	)
+
+
+# ─── ABP2 SE Cost Center duplicate diagnosis (Sahil 2026-06-26) ────────
+#
+# Prod SEPPL Stock Entry form shows TWO "Cost Center" fields side-by-side
+# on the Accounting Dimensions tab — the local bench shows only one
+# (the detox_project `custom_cost_center` Custom Field). The user
+# confirmed via the Custom Field list that NO other `cost_center` CF
+# exists on Stock Entry. So the duplicate comes from elsewhere — the
+# standard ERPNext schema, an Accounting Dimension targeting Stock Entry,
+# a Property Setter that adds a field via field_order injection, or
+# another installed app's setup.
+#
+# Run this on the prod tenant to gather the evidence:
+#
+#   bench --site seppl.erpera.io execute \
+#       detox_project.setup.diagnose_stock_entry_cost_center
+#
+# Then paste the JSON back so we can decide whether to hide the standard
+# field via a Property Setter, drop our Custom Field, or do something
+# else.
+
+@frappe.whitelist()
+def diagnose_stock_entry_cost_center():
+	"""Dump every place 'cost_center' / 'Cost Center' can come from on
+	the Stock Entry header. Read-only — never mutates anything."""
+	import json as _json
+
+	report: dict = {"site": frappe.local.site}
+
+	# 1. All Custom Fields on Stock Entry that mention cost_center in
+	#    fieldname OR label.
+	cfs = frappe.get_all(
+		"Custom Field",
+		filters={"dt": "Stock Entry"},
+		fields=["name", "fieldname", "label", "fieldtype",
+		        "insert_after", "module", "reqd", "hidden",
+		        "depends_on", "mandatory_depends_on"],
+	)
+	report["custom_fields_with_cost_center"] = [
+		c for c in cfs
+		if ("cost_center" in (c.get("fieldname") or "").lower()
+		    or "cost center" in (c.get("label") or "").lower())
+	]
+
+	# 2. Stock Entry meta — every header field whose fieldname or label
+	#    mentions cost_center. Tells us if the field is STANDARD (parent
+	#    = 'Stock Entry' DocField, not a Custom Field) or a Customize
+	#    Form injection.
+	meta = frappe.get_meta("Stock Entry", cached=False)
+	report["meta_fields_with_cost_center"] = [
+		{
+			"fieldname": df.fieldname, "label": df.label,
+			"fieldtype": df.fieldtype, "idx": df.idx,
+			"reqd": df.reqd, "hidden": df.hidden,
+			"options": df.options, "owner": df.owner,
+			"parent": df.parent,
+		}
+		for df in meta.fields
+		if ("cost_center" in (df.fieldname or "").lower()
+		    or "cost center" in (df.label or "").lower())
+	]
+
+	# 3. Property Setters touching cost_center on Stock Entry.
+	report["property_setters_on_cost_center"] = frappe.get_all(
+		"Property Setter",
+		filters={
+			"doc_type": "Stock Entry",
+			"field_name": ("like", "%cost_center%"),
+		},
+		fields=["name", "field_name", "property", "value", "module"],
+	)
+
+	# 4. The field_order Property Setter (the layout list). Shows every
+	#    fieldname listed in the form's order — including any injected
+	#    ones not in the meta DocField list.
+	fo_ps = frappe.db.get_value(
+		"Property Setter",
+		{"doc_type": "Stock Entry", "property": "field_order"},
+		"value",
+	)
+	if fo_ps:
+		try:
+			order = _json.loads(fo_ps)
+			report["field_order_cost_center_entries"] = [
+				fn for fn in order if "cost_center" in (fn or "").lower()
+			]
+		except Exception:
+			report["field_order_raw_first_500"] = (fo_ps or "")[:500]
+
+	# 5. Any Accounting Dimension that has Stock Entry as a target. ERPNext's
+	#    Accounting Dimensions feature adds a Custom Field on every doctype
+	#    in its `document_type` table — if 'Stock Entry' is there, the
+	#    auto-created field is the second one Sahil sees.
+	if frappe.db.exists("DocType", "Accounting Dimension"):
+		# AD is parent, AD Detail is child carrying document_type targets.
+		ads = frappe.db.sql(
+			"""SELECT ad.name, ad.label, ad.fieldname, ad.disabled
+			   FROM `tabAccounting Dimension` ad
+			   WHERE ad.label LIKE '%Cost Center%'
+			      OR ad.fieldname = 'cost_center'""",
+			as_dict=True,
+		)
+		report["accounting_dimensions_named_cost_center"] = ads
+		# Also walk Accounting Dimension Detail for any AD targeting
+		# Stock Entry.
+		try:
+			adds = frappe.db.sql(
+				"""SELECT add_.parent, add_.document_type
+				   FROM `tabAccounting Dimension Detail` add_
+				   WHERE add_.document_type = 'Stock Entry'""",
+				as_dict=True,
+			)
+			report["accounting_dimension_targets_stock_entry"] = adds
+		except Exception:
+			pass
+
+	# 6. Apps that have detox_waste_management's
+	#    enforce_project_cost_center_mandatory PS pattern. Per ABP2-I466
+	#    notes this is what makes detox_waste_management force reqd=1 on
+	#    Stock Entry Detail.cost_center — should NOT affect the header.
+	report["installed_apps"] = frappe.get_installed_apps()
+
+	return report
+
+
+# ─── ABP2 SE Cost Center duplicate heal (Sahil 2026-06-26) ─────────────
+#
+# Prod SEPPL Stock Entry shows TWO Cost Center fields. Diagnosis
+# (diagnose_stock_entry_cost_center above) revealed the
+# `Stock Entry-main-field_order` Property Setter lists `cost_center`
+# right after `project` — but our actual field is `custom_cost_center`.
+# On prod some upstream app provides a `cost_center` header field and
+# it renders in that slot AS WELL AS our `custom_cost_center` (which
+# falls back to its `insert_after = "project"` declaration). Result:
+# two side-by-side Cost Center fields.
+#
+# Fix: in the field_order PS, REPLACE 'cost_center' with
+# 'custom_cost_center' so the layout reserves the slot for our field
+# and the upstream `cost_center` becomes orphaned (gets pushed to the
+# bottom or doesn't render at all). Idempotent — re-running with
+# already-fixed field_order is a no-op.
+#
+# Wired into after_migrate via heal_stock_entry_cost_center_field_order
+# below.
+
+def heal_stock_entry_cost_center_field_order():
+	"""SE refactor (Sahil 2026-06-26) — REVERSE direction.
+
+	Previously this function inserted `custom_cost_center` into the
+	field_order PS in place of the orphan `cost_center`. Now that the
+	standard `cost_center` field is back on Stock Entry (ERPNext 16.25+),
+	the right slot is `cost_center` and `custom_cost_center` is what we
+	need to DROP from the field_order.
+
+	Idempotent: re-running on an already-clean field_order is a no-op.
+	"""
+	import json as _json
+	fo_ps_name = frappe.db.get_value(
+		"Property Setter",
+		{"doc_type": "Stock Entry", "property": "field_order"},
+		"name",
+	)
+	if not fo_ps_name:
+		return
+	fo_doc = frappe.get_doc("Property Setter", fo_ps_name)
+	try:
+		order = _json.loads(fo_doc.value or "[]")
+	except Exception:
+		return
+	if not isinstance(order, list):
+		return
+
+	had_custom = "custom_cost_center" in order
+	had_standard = "cost_center" in order
+
+	if not had_custom and had_standard:
+		return  # already clean — standard present, custom gone
+
+	# Drop every occurrence of the custom field.
+	cleaned = [fn for fn in order if fn != "custom_cost_center"]
+
+	# Insert `cost_center` where `custom_cost_center` used to be if the
+	# standard isn't already present.
+	if not had_standard and had_custom:
+		try:
+			c_idx = order.index("custom_cost_center")
+		except ValueError:
+			c_idx = None
+		if c_idx is None:
+			try:
+				p_idx = cleaned.index("project")
+				cleaned.insert(p_idx + 1, "cost_center")
+			except ValueError:
+				cleaned.append("cost_center")
+		else:
+			before = order[:c_idx]
+			cleaned_anchor = sum(1 for fn in before if fn != "custom_cost_center")
+			cleaned.insert(cleaned_anchor, "cost_center")
+
+	if cleaned != order:
+		fo_doc.value = _json.dumps(cleaned)
+		fo_doc.save(ignore_permissions=True)
+		frappe.clear_cache(doctype="Stock Entry")
+		print(
+			f"detox_project: heal_stock_entry_cost_center_field_order "
+			f"— rewrote field_order (custom_cost_center dropped: {had_custom}, "
+			f"cost_center inserted: {not had_standard})."
+		)
+
+
+# ABP2 SE Cost Center refactor (Sahil 2026-06-26) — delete the
+# `custom_cost_center` Custom Field on Stock Entry (we no longer ship
+# it; the standard cost_center field from ERPNext 16.25+ is canonical).
+# Idempotent. Safe on benches that never had the field.
+def drop_se_custom_cost_center_field():
+	"""Remove the Stock Entry-custom_cost_center Custom Field. The
+	standard `cost_center` field on Stock Entry is now canonical."""
+	cf_name = "Stock Entry-custom_cost_center"
+	if not frappe.db.exists("Custom Field", cf_name):
+		return
+	frappe.delete_doc(
+		"Custom Field", cf_name,
+		force=True, ignore_permissions=True, delete_permanently=True,
+	)
+	frappe.clear_cache(doctype="Stock Entry")
+	print(
+		"detox_project: drop_se_custom_cost_center_field — deleted "
+		"Stock Entry-custom_cost_center Custom Field."
 	)

@@ -85,10 +85,15 @@ def validate_work_order(doc, method=None):
 # Stock Entry
 # --------------------------------------------------------------------------
 def validate_stock_entry(doc, method=None):
-    """VAL-07 — header cost_center + project mandatory on Stock Entry."""
+    """VAL-07 — header cost_center + project mandatory on Stock Entry.
+
+    SE refactor (Sahil 2026-06-26): ERPNext 16.25+ ships a standard
+    `cost_center` field on Stock Entry header. We've dropped our
+    `custom_cost_center` CF; read from the standard field only.
+    """
     if not _stock_entry_is_in_scope(doc):
         return
-    header_cc = doc.get("custom_cost_center") or doc.get("cost_center")
+    header_cc = doc.get("cost_center")
     header_pj = doc.get("project")
     _check_header(doc, header_cc, header_pj, "Stock Entry")
 
@@ -128,17 +133,15 @@ def inherit_se_from_work_order(doc, method=None):
         ["project", "custom_cost_center", "cost_center"],
         as_dict=True,
     ) or {}
+    # Work Order keeps its `custom_cost_center` Custom Field — no
+    # standard cost_center exists on WO. Stock Entry now uses the
+    # standard `cost_center` field (post-ERPNext 16.25 refactor).
     wo_cc = wo.get("custom_cost_center") or wo.get("cost_center")
     wo_pj = wo.get("project")
     if wo_pj and not doc.get("project"):
         doc.project = wo_pj
-    if wo_cc:
-        # Stock Entry's CC field is added as a Custom Field in setup; tolerate
-        # whichever fieldname (custom_cost_center or cost_center) the bench has.
-        if doc.meta.get_field("custom_cost_center") and not doc.get("custom_cost_center"):
-            doc.custom_cost_center = wo_cc
-        if doc.meta.get_field("cost_center") and not doc.get("cost_center"):
-            doc.cost_center = wo_cc
+    if wo_cc and not doc.get("cost_center"):
+        doc.cost_center = wo_cc
 
 
 # --------------------------------------------------------------------------

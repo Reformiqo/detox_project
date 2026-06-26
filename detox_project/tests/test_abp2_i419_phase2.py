@@ -42,16 +42,32 @@ class TestABP2I419Phase2(IntegrationTestCase):
     # ----- Custom Fields / Property Setters wired -----
 
     def test_stock_entry_header_cost_center_field_exists(self):
+        """SE refactor (2026-06-26): Stock Entry now uses the standard
+        ERPNext `cost_center` field (ERPNext 16.25+ ships it on the
+        header). Our `custom_cost_center` Custom Field has been dropped.
+
+        Local benches on ERPNext < 16.25 won't have the standard field
+        either — skip in that case so the test runs cleanly across
+        ERPNext versions."""
+        # Custom field MUST be gone.
         cf = frappe.db.get_value(
             "Custom Field",
             {"dt": "Stock Entry", "fieldname": "custom_cost_center"},
-            ["fieldtype", "reqd", "module"],
-            as_dict=True,
+            "name",
         )
-        self.assertIsNotNone(cf, "Stock Entry.custom_cost_center missing")
-        self.assertEqual(cf.fieldtype, "Link")
-        self.assertEqual(cf.reqd, 1)
-        self.assertEqual(cf.module, "Detox Project")
+        self.assertIsNone(
+            cf, "Stock Entry.custom_cost_center should be dropped — "
+                "the standard ERPNext `cost_center` field replaces it.")
+        # Standard field MUST be present iff ERPNext is 16.25+.
+        meta = frappe.get_meta("Stock Entry")
+        if meta.has_field("cost_center"):
+            df = meta.get_field("cost_center")
+            self.assertEqual(df.fieldtype, "Link")
+        else:
+            self.skipTest(
+                "ERPNext < 16.25 — standard `cost_center` field not "
+                "available on Stock Entry header yet; skip in CI."
+            )
 
     def test_work_order_header_cost_center_field_exists(self):
         cf = frappe.db.get_value(

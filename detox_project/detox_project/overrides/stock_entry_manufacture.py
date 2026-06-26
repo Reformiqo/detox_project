@@ -188,17 +188,13 @@ def inherit_se_from_production_plan(doc, method=None):
 
     Fires on validate so it runs BEFORE ERPNext's standard validation.
 
-    Also folds in the hidden `cost_center` proxy field (added so legacy
-    Client Scripts can set_value 'cost_center' without erroring) —
-    whatever lands there is copied into custom_cost_center.
+    SE refactor (Sahil 2026-06-26): Stock Entry now uses the standard
+    `cost_center` field (ERPNext 16.25+). The old proxy/`custom_cost_center`
+    plumbing is gone. Production Plan still uses its own
+    `custom_cost_center` Custom Field.
     """
     if not _stock_entry_is_in_scope(doc):
         return
-
-    # Fold the proxy value first, in case the plan path doesn't fire.
-    proxy_cc = doc.get("cost_center")
-    if proxy_cc and not doc.get("custom_cost_center"):
-        doc.custom_cost_center = proxy_cc
 
     plan_name = doc.get("production_plan")
     if not plan_name or not frappe.db.exists("Production Plan", plan_name):
@@ -210,13 +206,13 @@ def inherit_se_from_production_plan(doc, method=None):
     ) or {}
     cc = plan.get("custom_cost_center")
     pj = plan.get("project")
-    if cc and not doc.get("custom_cost_center"):
-        doc.custom_cost_center = cc
+    if cc and not doc.get("cost_center"):
+        doc.cost_center = cc
     if pj and not doc.get("project"):
         doc.project = pj
     # Propagate to every item row — blank rows inherit, populated rows
     # are left alone.
-    final_cc = doc.get("custom_cost_center") or cc
+    final_cc = doc.get("cost_center") or cc
     final_pj = doc.get("project") or pj
     for row in (doc.get("items") or []):
         if final_cc and not row.get("cost_center"):

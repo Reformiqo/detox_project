@@ -84,8 +84,10 @@ function _add_stock_entry_button(frm) {
         new_se.stock_entry_type = "Manufacture";
         new_se.production_plan = frm.doc.name;
         new_se.company = frm.doc.company;
+        // SE refactor (2026-06-26): Production Plan keeps custom_cost_center
+        // but Stock Entry now uses the standard cost_center field.
         if (frm.doc.custom_cost_center) {
-            new_se.custom_cost_center = frm.doc.custom_cost_center;
+            new_se.cost_center = frm.doc.custom_cost_center;
         }
         if (frm.doc.project) {
             new_se.project = frm.doc.project;
