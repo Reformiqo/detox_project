@@ -130,13 +130,13 @@ def inherit_se_from_work_order(doc, method=None):
         return
     wo = frappe.db.get_value(
         "Work Order", wo_name,
-        ["project", "custom_cost_center", "cost_center"],
+        ["project", "custom_cost_center"],
         as_dict=True,
     ) or {}
     # Work Order keeps its `custom_cost_center` Custom Field — no
     # standard cost_center exists on WO. Stock Entry now uses the
     # standard `cost_center` field (post-ERPNext 16.25 refactor).
-    wo_cc = wo.get("custom_cost_center") or wo.get("cost_center")
+    wo_cc = wo.get("custom_cost_center")
     wo_pj = wo.get("project")
     if wo_pj and not doc.get("project"):
         doc.project = wo_pj

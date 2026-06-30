@@ -15,10 +15,10 @@ app_version = "2.0.0"
 fixtures = [
 	{"dt": "Custom Field", "filters": [["module", "=", "Detox Project"]]},
 	{"dt": "Property Setter", "filters": [["module", "=", "Detox Project"]]},
-	{"dt": "Workflow", "filters": [["name", "in", ["Project Approval Workflow", "Financial Model Approval Workflow"]]]},
-	{"dt": "Notification", "filters": [["module", "=", "Detox Project"]]},
-	# ABP2-I419 Phase 5 — ship the Production Day Summary print format.
-	{"dt": "Print Format", "filters": [["module", "=", "Detox Project"]]},
+	# {"dt": "Workflow", "filters": [["name", "in", ["Project Approval Workflow", "Financial Model Approval Workflow"]]]},
+	# {"dt": "Notification", "filters": [["module", "=", "Detox Project"]]},
+	# # ABP2-I419 Phase 5 — ship the Production Day Summary print format.
+	# {"dt": "Print Format", "filters": [["module", "=", "Detox Project"]]},
 ]
 
 # --------------------------------------------------------------------------
