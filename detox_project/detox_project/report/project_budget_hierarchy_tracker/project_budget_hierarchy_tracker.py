@@ -81,23 +81,22 @@ def get_columns():
 
 
 def _compute_actual(project, cost_center, wbs_element=None, sub_wbs_element=None):
-    """Actual for a WBS = spent-so-far attributed via WBS Allocation.
+    """Actual for a WBS = billed portion of every PO allocated to it,
+    PLUS every standalone PI (no source PO) allocated to it.
 
-    ABP2-I439 #3 (Sahil 2026-07-01 comment): the original impl joined
-    GL Entry on (project, cost_center) but most WBS Elements on SEPPL
-    have no cost_center on the master, so every Actual came out ₹0.00.
-    Also, GL doesn't carry the WBS dimension — mapping GL back to a WBS
-    requires the WBS Allocation table anyway.
+    Mirrors _compute_commitment's shape: for each PO carrying a WBS
+    Allocation, split the allocated share by billed_fraction. Together
+    Commitment (open) + Actual (billed) sum to the WBS's total PO
+    allocation — no double count.
 
-    New formula mirrors the WBS-master's own `spent` calc
-    (wbs_element.py.calculate_and_set_spent): sum the WBS's allocated
-    share of every submitted Purchase Invoice, EXCLUDING PIs whose
-    underlying PO already has an allocation to the same WBS (that
-    money was already counted at the PO stage).
+    ABP2-I439 #3 (Sahil 2026-07-01): the original impl joined GL Entry
+    on (project, cost_center) but most WBS Elements on SEPPL have no
+    cost_center on the master, so every Actual came out ₹0.00.
+    Also GL Entry doesn't carry the WBS dimension — mapping GL back
+    to a WBS needs the WBS Allocation table anyway.
 
-    When called with wbs_element=None (Category rollup path pre-refactor
-    that only knew project+CC), we fall back to the old GL query so we
-    don't crash on old callers.
+    Legacy signature (project, cost_center only) preserved via GL
+    fallback so old callers don't crash.
     """
     if not wbs_element:
         # Legacy call site — GL fallback (project + CC only).
@@ -116,16 +115,49 @@ def _compute_actual(project, cost_center, wbs_element=None, sub_wbs_element=None
         )
         return flt(row[0][0]) if row else 0.0
 
+    # --- PO billed portion (mirrors Commitment's open-portion pattern) ---
     where_wbs = "wa.wbs_element = %s"
-    args = [wbs_element, wbs_element]  # second arg for the NOT EXISTS sub-check
+    args = [wbs_element]
     if sub_wbs_element:
         where_wbs += " AND wa.sub_wbs_element = %s"
-        args.insert(1, sub_wbs_element)
         args.append(sub_wbs_element)
     else:
         where_wbs += " AND (wa.sub_wbs_element IS NULL OR wa.sub_wbs_element = '')"
 
-    row = frappe.db.sql(
+    po_rows = frappe.db.sql(
+        f"""
+        SELECT po.name,
+               po.grand_total,
+               COALESCE((
+                   SELECT SUM(poi.billed_amt)
+                   FROM `tabPurchase Order Item` poi
+                   WHERE poi.parent = po.name
+               ), 0) AS billed,
+               wa.allocated_amount
+        FROM `tabWBS Allocation` wa
+        INNER JOIN `tabPurchase Order` po ON po.name = wa.parent
+        WHERE wa.parenttype = 'Purchase Order'
+          AND po.docstatus = 1
+          AND po.status != 'Cancelled'
+          AND {where_wbs}
+        """,
+        tuple(args),
+        as_dict=True,
+    )
+    total = 0.0
+    for r in po_rows:
+        po_total = flt(r.grand_total)
+        billed = flt(r.billed)
+        if po_total <= 0:
+            continue
+        billed_fraction = min(1.0, max(0.0, billed / po_total))
+        total += flt(r.allocated_amount) * billed_fraction
+
+    # --- Plus standalone PIs (no source PO) allocated to this WBS ---
+    # A PI is standalone if NO row on its Purchase Invoice Item has a
+    # purchase_order value. Those PIs never contributed to any PO's
+    # Commitment/Actual split, so we count their full allocated amount.
+    standalone_pi = frappe.db.sql(
         f"""
         SELECT COALESCE(SUM(wa.allocated_amount), 0)
         FROM `tabWBS Allocation` wa
@@ -135,11 +167,6 @@ def _compute_actual(project, cost_center, wbs_element=None, sub_wbs_element=None
           AND NOT EXISTS (
               SELECT 1
               FROM `tabPurchase Invoice Item` pii
-              INNER JOIN `tabWBS Allocation` po_wa
-                      ON po_wa.parent = pii.purchase_order
-                     AND po_wa.parenttype = 'Purchase Order'
-                     AND po_wa.wbs_element = %s
-                     {'AND po_wa.sub_wbs_element = %s' if sub_wbs_element else ''}
               WHERE pii.parent = pi.name
                 AND pii.purchase_order IS NOT NULL
                 AND pii.purchase_order != ''
@@ -148,7 +175,9 @@ def _compute_actual(project, cost_center, wbs_element=None, sub_wbs_element=None
         """,
         tuple(args),
     )
-    return flt(row[0][0]) if row else 0.0
+    total += flt(standalone_pi[0][0]) if standalone_pi else 0.0
+
+    return total
 
 
 def _compute_commitment(wbs_element, sub_wbs_element=None):
