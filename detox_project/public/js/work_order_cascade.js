@@ -32,8 +32,29 @@ detox_project.wo_cascade_from_header = function (frm) {
 	});
 };
 
+// ABP2-I483 reopen (Sahil 2026-07-01, Image #53): the Production Plan
+// on_submit cascade (cc_project_guard.cascade_pp_to_work_orders) only
+// stamps custom_cost_center if PP already has one. On this WO
+// (MFG-WO-2026-00014) the PP submitted with a blank CC so the WO now
+// shows Project auto-filled but Cost Center empty. Fall back to
+// Project.cost_center (the default CC configured on the Project master)
+// so the header self-heals as soon as the WO form loads.
+detox_project.wo_fill_cc_from_project = function (frm) {
+	if (frm.doc.custom_cost_center || frm.doc.cost_center) return;
+	if (!frm.doc.project) return;
+	frappe.db.get_value("Project", frm.doc.project, "cost_center").then((r) => {
+		const project_cc = r && r.message && r.message.cost_center;
+		if (!project_cc) return;
+		// Set both header fields so downstream cascades pick it up.
+		const target = frm.get_field("custom_cost_center") ? "custom_cost_center" : "cost_center";
+		frm.set_value(target, project_cc);
+		detox_project.wo_cascade_from_header(frm);
+	});
+};
+
 frappe.ui.form.on("Work Order", {
 	refresh: function (frm) {
+		detox_project.wo_fill_cc_from_project(frm);
 		detox_project.wo_cascade_from_header(frm);
 	},
 	before_save: function (frm) {
@@ -46,6 +67,7 @@ frappe.ui.form.on("Work Order", {
 		detox_project.wo_cascade_from_header(frm);
 	},
 	project: function (frm) {
+		detox_project.wo_fill_cc_from_project(frm);
 		detox_project.wo_cascade_from_header(frm);
 	},
 });
