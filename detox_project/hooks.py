@@ -36,6 +36,9 @@ doctype_js = {
 	"Production Plan": "public/js/production_plan_custom.js",
 	# ABP2-I419 Phase 3 — Stock Entry Manufacture client logic.
 	"Stock Entry": "public/js/stock_entry_manufacture.js",
+	# ABP2-I483 — cascade WO header CC + Project to required_items rows
+	# BEFORE Frappe's client-side check_mandatory blocks the save.
+	"Work Order": "public/js/work_order_cascade.js",
 }
 
 # --------------------------------------------------------------------------
