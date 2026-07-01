@@ -80,20 +80,73 @@ def get_columns():
 # ────────────────────────────────────────────────────────────────────
 
 
-def _compute_actual(project, cost_center):
-    """Actual = Σ GL Entry debit − credit filtered to project + CC."""
-    if not cost_center:
-        return 0.0
+def _compute_actual(project, cost_center, wbs_element=None, sub_wbs_element=None):
+    """Actual for a WBS = spent-so-far attributed via WBS Allocation.
+
+    ABP2-I439 #3 (Sahil 2026-07-01 comment): the original impl joined
+    GL Entry on (project, cost_center) but most WBS Elements on SEPPL
+    have no cost_center on the master, so every Actual came out ₹0.00.
+    Also, GL doesn't carry the WBS dimension — mapping GL back to a WBS
+    requires the WBS Allocation table anyway.
+
+    New formula mirrors the WBS-master's own `spent` calc
+    (wbs_element.py.calculate_and_set_spent): sum the WBS's allocated
+    share of every submitted Purchase Invoice, EXCLUDING PIs whose
+    underlying PO already has an allocation to the same WBS (that
+    money was already counted at the PO stage).
+
+    When called with wbs_element=None (Category rollup path pre-refactor
+    that only knew project+CC), we fall back to the old GL query so we
+    don't crash on old callers.
+    """
+    if not wbs_element:
+        # Legacy call site — GL fallback (project + CC only).
+        if not cost_center:
+            return 0.0
+        row = frappe.db.sql(
+            """
+            SELECT COALESCE(SUM(debit - credit), 0)
+            FROM `tabGL Entry`
+            WHERE docstatus = 1
+              AND is_cancelled = 0
+              AND project = %s
+              AND cost_center = %s
+            """,
+            (project, cost_center),
+        )
+        return flt(row[0][0]) if row else 0.0
+
+    where_wbs = "wa.wbs_element = %s"
+    args = [wbs_element, wbs_element]  # second arg for the NOT EXISTS sub-check
+    if sub_wbs_element:
+        where_wbs += " AND wa.sub_wbs_element = %s"
+        args.insert(1, sub_wbs_element)
+        args.append(sub_wbs_element)
+    else:
+        where_wbs += " AND (wa.sub_wbs_element IS NULL OR wa.sub_wbs_element = '')"
+
     row = frappe.db.sql(
-        """
-        SELECT COALESCE(SUM(debit - credit), 0)
-        FROM `tabGL Entry`
-        WHERE docstatus = 1
-          AND is_cancelled = 0
-          AND project = %s
-          AND cost_center = %s
+        f"""
+        SELECT COALESCE(SUM(wa.allocated_amount), 0)
+        FROM `tabWBS Allocation` wa
+        INNER JOIN `tabPurchase Invoice` pi ON pi.name = wa.parent
+        WHERE wa.parenttype = 'Purchase Invoice'
+          AND pi.docstatus = 1
+          AND NOT EXISTS (
+              SELECT 1
+              FROM `tabPurchase Invoice Item` pii
+              INNER JOIN `tabWBS Allocation` po_wa
+                      ON po_wa.parent = pii.purchase_order
+                     AND po_wa.parenttype = 'Purchase Order'
+                     AND po_wa.wbs_element = %s
+                     {'AND po_wa.sub_wbs_element = %s' if sub_wbs_element else ''}
+              WHERE pii.parent = pi.name
+                AND pii.purchase_order IS NOT NULL
+                AND pii.purchase_order != ''
+          )
+          AND {where_wbs}
         """,
-        (project, cost_center),
+        tuple(args),
     )
     return flt(row[0][0]) if row else 0.0
 
@@ -250,7 +303,7 @@ def get_data(filters):
         wbs_elements = get_wbs_elements(project, fm_name, cat.category, status_filter)
 
         # Category roll-up: sum WBS-level Actual / Commitment / RemOrdPlan.
-        cat_actual = sum(_compute_actual(project, w.cost_center) for w in wbs_elements)
+        cat_actual = sum(_compute_actual(project, w.cost_center, w.name) for w in wbs_elements)
         cat_commitment = sum(_compute_commitment(w.name) for w in wbs_elements)
         cat_rop = sum(_compute_rem_ord_plan(w.name) for w in wbs_elements)
         assigned, available, util = _derive(
@@ -301,7 +354,7 @@ def get_wbs_elements(project, fm_name, category, status_filter):
 def add_wbs_row(data, project, wbs, indent):
     docs = get_linked_docs(wbs.name, level="wbs")
     budget = flt(wbs.budget_amount)
-    actual = _compute_actual(project, wbs.cost_center)
+    actual = _compute_actual(project, wbs.cost_center, wbs.name)
     commitment = _compute_commitment(wbs.name)
     rop = _compute_rem_ord_plan(wbs.name)
     assigned, available, util = _derive(budget, actual, commitment, rop)
@@ -335,7 +388,7 @@ def add_sub_wbs_rows(data, project, wbs_name, indent):
     for sub in sub_wbs_list:
         docs = get_linked_docs(wbs_name, sub.name, level="sub_wbs")
         budget = flt(sub.budget_amount)
-        actual = _compute_actual(project, sub.cost_center)
+        actual = _compute_actual(project, sub.cost_center, wbs_name, sub.name)
         commitment = _compute_commitment(wbs_name, sub.name)
         rop = _compute_rem_ord_plan(wbs_name, sub.name)
         assigned, available, util = _derive(budget, actual, commitment, rop)
