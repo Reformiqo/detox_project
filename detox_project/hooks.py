@@ -114,6 +114,12 @@ doc_events = {
 		"on_submit": "detox_project.detox_project.overrides.cc_project_guard.cascade_pp_to_work_orders",
 	},
 	"Work Order": {
+		# ABP2-I483 reopen (Sahil 2026-07-01): when a WO is created via
+		# Production Plan → Create → Work Order, ERPNext inserts it with
+		# ignore_mandatory/ignore_validate flags. Neither our validate
+		# hook nor PP.on_submit fires (PP is Draft). Inherit CC + Project
+		# from the parent PP on before_insert so the fresh WO has them.
+		"before_insert": "detox_project.detox_project.overrides.cc_project_guard.inherit_wo_from_production_plan",
 		"validate": "detox_project.detox_project.overrides.cc_project_guard.validate_work_order",
 	},
 	"Stock Entry": {

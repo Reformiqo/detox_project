@@ -67,6 +67,30 @@ def _check_operation_uniqueness(doc) -> None:
 # --------------------------------------------------------------------------
 # Work Order
 # --------------------------------------------------------------------------
+def inherit_wo_from_production_plan(doc, method=None):
+	"""ABP2-I483 reopen (Sahil 2026-07-01, Image #55): when a WO is
+	created via Production Plan → Create → Work Order button,
+	ERPNext's PP.create_work_order() sets ignore_mandatory + ignore_validate
+	and the plan itself is often still Draft. The result is a WO with
+	Project blank AND Cost Center blank, forcing the user to re-type
+	them on every WO — even though the parent PP has them.
+
+	Pull CC + Project from the parent PP on before_insert so the fresh
+	WO is born fully populated. Idempotent: never overrides what the
+	user already set on the WO.
+	"""
+	if not doc.get("production_plan"):
+		return
+	pp_cc, pp_pj = frappe.db.get_value(
+		"Production Plan", doc.production_plan,
+		[PP_CC_FIELD, "project"],
+	) or (None, None)
+	if pp_cc and not doc.get("custom_cost_center"):
+		doc.custom_cost_center = pp_cc
+	if pp_pj and not doc.get("project"):
+		doc.project = pp_pj
+
+
 def validate_work_order(doc, method=None):
 	"""VAL-06 — header cost_center + project mandatory on Work Order."""
 	header_cc = doc.get("custom_cost_center") or doc.get("cost_center")
