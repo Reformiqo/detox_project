@@ -28,6 +28,31 @@ class WBSElement(Document):
 		self.calculate_totals()
 		self.validate_category_budget()
 
+	def after_insert(self):
+		if not self.project:
+			frappe.throw("Project is required.")
+
+		project_num = self.project.split("-")[-1][-3:]
+		base = f"WBS-{project_num}"
+
+		if not self.name.startswith(base + "."):
+			siblings = frappe.db.get_all(
+				"WBS Element",
+				filters={"project": self.project},
+				fields=["name"]
+			)
+			numbers = []
+			for s in siblings:
+				try:
+					numbers.append(int(s.name.split(".")[-1]))
+				except:
+					pass
+
+			next_num = max(numbers) + 1 if numbers else 1
+			new_name = f"{base}.{next_num}"
+			frappe.rename_doc("WBS Element", self.name, new_name, force=True)
+
+
 	def on_update(self):
 		self.update_project_budget_summary()
 
