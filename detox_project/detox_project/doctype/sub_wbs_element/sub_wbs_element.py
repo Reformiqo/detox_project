@@ -38,6 +38,47 @@ class SubWBSElement(Document):
 		self.calculate_totals()
 		self.validate_budget_against_parent()
 
+	def after_insert(self):
+		if not self.main_wbs_element:
+			frappe.throw("Main WBS Element is required.")
+
+		if self.parent_sub_wbs:
+			# Strip "SUB " prefix to get clean base: "SUB WBS-008.1.1" → "WBS-008.1.1"
+			base = self.parent_sub_wbs.replace("SUB ", "")
+			siblings = frappe.db.get_all(
+				"Sub WBS Element",
+				filters={"parent_sub_wbs": self.parent_sub_wbs},
+				fields=["name"]
+			)
+		else:
+			# Base is WBS Element name directly: "WBS-008.1"
+			base = self.main_wbs_element
+			siblings = frappe.db.get_all(
+				"Sub WBS Element",
+				filters={
+					"main_wbs_element": self.main_wbs_element,
+					"parent_sub_wbs": ["is", "not set"]
+				},
+				fields=["name"]
+			)
+
+		expected_prefix = f"SUB {base}."
+
+		if not self.name.startswith(expected_prefix):
+			numbers = []
+			for s in siblings:
+				try:
+					# Strip "SUB " before splitting: "SUB WBS-008.1.2" → last segment = "2"
+					clean = s.name.replace("SUB ", "")
+					numbers.append(int(clean.split(".")[-1]))
+				except:
+					pass
+
+			next_num = max(numbers) + 1 if numbers else 1
+			new_name = f"SUB {base}.{next_num}"
+			frappe.rename_doc("Sub WBS Element", self.name, new_name, force=True)
+
+
 	def calculate_totals(self):
 		if self.budget_amount:
 			self.budget_utilization_pct = (self.budget_spent or 0) / self.budget_amount * 100
