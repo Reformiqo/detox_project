@@ -43,6 +43,17 @@ def after_migrate():
 	setup_cr01_production_plan_date()  # CR-01 — Production Plan date correction
 	from detox_project.detox_project.change_set.cr03_downtime import install_cr03_downtime
 	install_cr03_downtime()  # CR-03 — Stock Entry downtime capture custom fields
+	# CR-05/06/07 — MUST run after setup_phase3 (base custom_qty/custom_rate exist
+	# to insert_after) and after setup_phase5_print_format (enhanced Production Day
+	# Summary supersedes the base template).
+	from detox_project.detox_project.change_set.cr050607_stock_entry import install as install_cr050607
+	install_cr050607()  # CR-05/06/07 — additional-costs & cost-centre hardening
+	from detox_project.detox_project.change_set.cr02_bulk_grid import install as install_cr02_bulk_grid
+	install_cr02_bulk_grid()  # CR-02 — allow_bulk_edit + XLSX grid up/download
+	from detox_project.detox_project.change_set.cr04_material_transfer import (
+		install as install_cr04_material_transfer,
+	)
+	install_cr04_material_transfer()  # CR-04 — Material Transfer for Manufacture CFs
 
 
 FM_CHILD_TABLES = (

@@ -90,6 +90,36 @@ frappe.ui.form.on("Stock Entry Detail", {
     },
 });
 
+// CR-07 refresh wiring — filter the Additional Costs grid's PO Item picker
+// by the row's chosen Purchase Order (CR-07.4). Registered on the Stock
+// Entry form refresh via the block below.
+frappe.ui.form.on("Stock Entry", {
+    refresh(frm) {
+        _wire_addl_cost_po_item_filter(frm);
+    },
+});
+
+function _wire_addl_cost_po_item_filter(frm) {
+    const grid = frm.fields_dict.additional_costs && frm.fields_dict.additional_costs.grid;
+    if (!grid || !grid.get_field) return;
+    const po_item_field = grid.get_field("custom_purchase_order_item");
+    if (!po_item_field) return;
+    // CR-07.4 — restrict PO Item options to lines of the row's PO. Reuse the
+    // same server query the source-row picker uses (shows item_code, not the
+    // row hash — Sahil Image #34).
+    po_item_field.get_query = function (doc, cdt, cdn) {
+        const row = locals[cdt] && locals[cdt][cdn];
+        const filters = {};
+        if (row && row.custom_purchase_order) {
+            filters.parent = row.custom_purchase_order;
+        }
+        return {
+            query: "detox_project.detox_project.overrides.stock_entry_manufacture.po_item_link_query",
+            filters: filters,
+        };
+    };
+}
+
 function _is_mfg(frm) {
     return MFG_TYPES.has(frm.doc.stock_entry_type || "");
 }
@@ -280,7 +310,54 @@ function _recompute_addl_cost_amount(frm, cdt, cdn) {
         frappe.model.set_value(cdt, cdn, "amount", qty * rate);
     }
 }
+
+// CR-07.3 — when a Service Item is picked on an additional-cost row, fetch
+// its stock UOM into custom_uom (read-only). Gated on the parent being a
+// Stock Entry so the shared Landed Cost Voucher form is untouched.
+function _fetch_addl_cost_service_item_uom(frm, cdt, cdn) {
+    if (frm.doctype !== "Stock Entry") return;
+    const row = locals[cdt][cdn];
+    if (!row.custom_service_item) return;
+    frappe.db.get_value("Item", row.custom_service_item, "stock_uom", (r) => {
+        if (r && r.stock_uom) {
+            frappe.model.set_value(cdt, cdn, "custom_uom", r.stock_uom);
+        }
+    });
+}
+
+// CR-07.4 — when a service PO line is picked, fetch its rate into
+// custom_rate (mirrors FR-11 on source rows), plus item + UOM, then
+// recompute amount through CL-18. The user may still override the rate.
+function _fetch_addl_cost_po_item(frm, cdt, cdn) {
+    if (frm.doctype !== "Stock Entry") return;
+    const row = locals[cdt][cdn];
+    if (!row.custom_purchase_order_item) return;
+    frappe.db.get_value(
+        "Purchase Order Item",
+        row.custom_purchase_order_item,
+        ["rate", "item_code", "uom"],
+        (r) => {
+            if (!r) return;
+            if (r.item_code && !row.custom_service_item) {
+                frappe.model.set_value(cdt, cdn, "custom_service_item", r.item_code);
+            }
+            if (r.uom) {
+                frappe.model.set_value(cdt, cdn, "custom_uom", r.uom);
+            }
+            if (r.rate) {
+                frappe.model.set_value(cdt, cdn, "custom_rate", flt(r.rate));
+            }
+            // set_value on custom_rate above fires the custom_rate handler
+            // which recomputes amount; call again defensively in case rate
+            // was unchanged but qty was already present.
+            _recompute_addl_cost_amount(frm, cdt, cdn);
+        },
+    );
+}
+
 frappe.ui.form.on("Landed Cost Taxes and Charges", {
     custom_qty: _recompute_addl_cost_amount,
     custom_rate: _recompute_addl_cost_amount,
+    custom_service_item: _fetch_addl_cost_service_item_uom,
+    custom_purchase_order_item: _fetch_addl_cost_po_item,
 });
