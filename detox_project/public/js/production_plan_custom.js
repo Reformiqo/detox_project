@@ -100,6 +100,71 @@ function _add_stock_entry_button(frm) {
         }
         frappe.set_route("Form", "Stock Entry", new_se.name);
     }, __("Create"));
+
+    _add_material_transfer_button(frm);
+}
+
+// CR-04 / CL-13 — on a SUBMITTED No-BOM Production Plan, add a
+// 'Material Transfer for Manufacture' button under Create. The user
+// picks the operation; the server builder (CZ-40) pulls that operation's
+// Table-2 raw-material rows and returns a DRAFT Stock Entry of type
+// 'Material Transfer for Manufacture' with company / cost_center /
+// project inherited. Mirrors _add_stock_entry_button but the row build
+// is server-side so it can reuse get_operation_rm_rows.
+function _add_material_transfer_button(frm) {
+    if (frm.is_new()) return;
+    if (frm.doc.docstatus !== 1) return;
+    if (!frm.doc.custom_no_bom) return;
+
+    frm.add_custom_button(__("Material Transfer for Manufacture"), () => {
+        // Operation options come from the plan's declared operations
+        // (custom_operations) / processes (custom_processes) — distinct
+        // operation_name values.
+        const seen = {};
+        const ops = [];
+        (frm.doc.custom_processes || []).concat(frm.doc.custom_operations || [])
+            .forEach((r) => {
+                const op = r.operation_name;
+                if (op && !seen[op]) { seen[op] = 1; ops.push(op); }
+            });
+        if (!ops.length) {
+            frappe.msgprint({
+                title: __("No operations"),
+                message: __("This plan has no operations to transfer for."),
+                indicator: "orange",
+            });
+            return;
+        }
+        frappe.prompt(
+            [{
+                fieldname: "operation",
+                label: __("Operation / Process"),
+                fieldtype: "Select",
+                options: ops.join("\n"),
+                default: ops[0],
+                reqd: 1,
+            }],
+            (values) => {
+                frappe.call({
+                    method: "detox_project.detox_project.change_set."
+                        + "cr04_material_transfer.make_material_transfer_for_manufacture",
+                    args: {
+                        production_plan: frm.doc.name,
+                        operation: values.operation,
+                    },
+                    freeze: true,
+                    freeze_message: __("Building Material Transfer…"),
+                    callback(r) {
+                        if (!r || !r.message) return;
+                        const doc = frappe.model.sync(r.message)[0];
+                        frappe.set_route("Form", "Stock Entry", doc.name);
+                    },
+                });
+            },
+            __("Material Transfer for Manufacture"),
+            __("Create")
+        );
+    }, __("Create"));
 }
 
 frappe.ui.form.on("Detox Production Plan Process", {
