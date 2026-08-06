@@ -110,8 +110,14 @@ doc_events = {
 	# manufacturing chain. Single shared guard in
 	# detox_project.detox_project.overrides.cc_project_guard.
 	"Production Plan": {
-		"validate": "detox_project.detox_project.overrides.cc_project_guard.validate_production_plan",
+		"validate": [
+			"detox_project.detox_project.overrides.cc_project_guard.validate_production_plan",
+			# CR-01 — planned_date >= posting_date (block), past-date warn.
+			"detox_project.detox_project.change_set.cr01_production_plan_date.validate_production_plan_dates",
+		],
 		"on_submit": "detox_project.detox_project.overrides.cc_project_guard.cascade_pp_to_work_orders",
+		# CR-01 — post-submit date revision: role gate, reason mandatory, stamp + timeline, sync draft links.
+		"on_update_after_submit": "detox_project.detox_project.change_set.cr01_production_plan_date.on_update_after_submit_dates",
 	},
 	"Work Order": {
 		# ABP2-I483 reopen (Sahil 2026-07-01): when a WO is created via
@@ -138,6 +144,8 @@ doc_events = {
 			"detox_project.detox_project.overrides.cc_project_guard.validate_stock_entry",
 			# ABP2-I419 Phase 3 — Mfg-flow validations + rollup.
 			"detox_project.detox_project.overrides.stock_entry_manufacture.validate_stock_entry_manufacture",
+			# CR-03 — downtime capture: reason reqd when downtime>0, time order, shift cap, net>=0.
+			"detox_project.detox_project.change_set.cr03_downtime.validate_downtime",
 		],
 		"on_submit": "detox_project.detox_project.overrides.stock_entry_manufacture.rollup_total_produced_on_submit",
 		"on_cancel": "detox_project.detox_project.overrides.stock_entry_manufacture.rollup_total_produced_on_cancel",

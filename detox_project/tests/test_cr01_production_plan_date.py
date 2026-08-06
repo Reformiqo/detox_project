@@ -76,7 +76,7 @@ class TestCR01ProductionPlanDate(IntegrationTestCase):
 	# ------------------------------------------------------------------
 	# helpers
 	# ------------------------------------------------------------------
-	def _make_plan(self, planned_date, posting_date=None, submit=False):
+	def _make_plan(self, planned_date, posting_date=None, submit=False, insert=True):
 		doc = frappe.get_doc({
 			"doctype": "Production Plan",
 			"company": self.company,
@@ -106,6 +106,11 @@ class TestCR01ProductionPlanDate(IntegrationTestCase):
 				"project": self.project,
 			}],
 		})
+		if not insert:
+			# Build in-memory only — used by negative-path tests where the
+			# now-wired validate hook would otherwise raise at insert time,
+			# so we can call the validator directly against the doc.
+			return doc
 		doc.insert(ignore_permissions=True)
 		self._cleanup.append(("Production Plan", doc.name))
 		if submit:
@@ -203,9 +208,11 @@ class TestCR01ProductionPlanDate(IntegrationTestCase):
 	# CVAL-01 — date sequence (BLOCK) / TC-03
 	# ------------------------------------------------------------------
 	def test_cval01_blocks_planned_before_posting(self):
-		# planned_date earlier than posting_date must be blocked.
+		# planned_date earlier than posting_date must be blocked. Build the
+		# plan in-memory (insert=False) because the wired validate hook now
+		# fires at insert; we assert the validator itself raises.
 		doc = self._make_plan(
-			planned_date=add_days(today(), -3), posting_date=today(),
+			planned_date=add_days(today(), -3), posting_date=today(), insert=False,
 		)
 		with self.assertRaises(frappe.ValidationError):
 			validate_production_plan_dates(doc)
