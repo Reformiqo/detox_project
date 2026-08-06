@@ -15,6 +15,16 @@ app_version = "2.0.0"
 fixtures = [
 	{"dt": "Custom Field", "filters": [["module", "=", "Detox Project"]]},
 	{"dt": "Property Setter", "filters": [["module", "=", "Detox Project"]]},
+	# ABP2-I515 — replicate SEPPL's Project Budget Plan linked-doctype config
+	# (Financial Model / WBS Element / Sub WBS Element / WBS Allocation) to
+	# DGEPL. These Client Scripts (UI glue: FM show/hide, Sub-WBS post-rename
+	# redirect + Refresh Spent button) were site-created on SEPPL (module NULL)
+	# and never travelled on deploy; tagged Detox Project so they ship.
+	# NOTE: the WBS / Sub-WBS *naming* is handled by app-code autoname/
+	# after_insert in the controllers (PR #4 server_script_to_app), so we do
+	# NOT ship the legacy UI naming Server Scripts — setup.py disables the
+	# non-idempotent legacy v1 instead (disable_legacy_wbs_naming_scripts).
+	{"dt": "Client Script", "filters": [["module", "=", "Detox Project"]]},
 	# {"dt": "Workflow", "filters": [["name", "in", ["Project Approval Workflow", "Financial Model Approval Workflow"]]]},
 	# {"dt": "Notification", "filters": [["module", "=", "Detox Project"]]},
 	# # ABP2-I419 Phase 5 — ship the Production Day Summary print format.

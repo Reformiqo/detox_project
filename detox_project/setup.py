@@ -35,6 +35,7 @@ def after_migrate():
 	# only the standard `cost_center` field renders post-ERPNext 16.25.
 	drop_se_custom_cost_center_field()
 	heal_stock_entry_cost_center_field_order()
+	disable_legacy_wbs_naming_scripts()  # ABP2-I515
 	# DETOX Production Change-Set 01 — code-first CF/PS/CS (not in shared fixtures).
 	from detox_project.detox_project.change_set.cr01_production_plan_date import (
 		setup_cr01_production_plan_date,
@@ -2412,6 +2413,38 @@ def heal_legacy_se_cost_center_scripts():
 		f"detox_project: heal_legacy_se_cost_center_scripts — "
 		f"reverted {patched} script(s) back to cost_center."
 	)
+
+
+def disable_legacy_wbs_naming_scripts():
+	"""ABP2-I515 — WBS / Sub-WBS naming is now handled by app code
+	(`WBSElement.autoname/after_insert`, `SubWBSElement.autoname/after_insert`;
+	PR #4 server_script_to_app). The legacy UI Server Script `Sub WBS Naming
+	Series` renames on After Insert WITHOUT the idempotent
+	`name.startswith(base)` guard the app code has — so if it is still enabled
+	on a site (e.g. DGEPL, which never retired it), it fires *after* the
+	app-code rename and increments the number a second time, producing wrong /
+	duplicate Sub-WBS names.
+
+	Disable that legacy Server Script (and its paired Client Script) wherever
+	they exist, so app code is the single naming authority. Idempotent —
+	re-runs are no-ops once they are disabled.
+	"""
+	name = "Sub WBS Naming Series"
+	changed = []
+	if frappe.db.exists("Server Script", name):
+		if not frappe.db.get_value("Server Script", name, "disabled"):
+			frappe.db.set_value("Server Script", name, "disabled", 1, update_modified=False)
+			changed.append("server")
+	# The paired Client Script (a post-rename redirect) is superseded by
+	# `sub wbs naming series v2`; the fixture ships it disabled, but disable it
+	# here too so a site that only migrates code (not fixtures) is consistent.
+	if frappe.db.exists("Client Script", name):
+		if frappe.db.get_value("Client Script", name, "enabled"):
+			frappe.db.set_value("Client Script", name, "enabled", 0, update_modified=False)
+			changed.append("client")
+	if changed:
+		frappe.db.commit()
+		print(f"detox_project: disable_legacy_wbs_naming_scripts — disabled {', '.join(changed)}.")
 
 
 # ─── ABP2 SE Cost Center duplicate diagnosis (Sahil 2026-06-26) ────────
