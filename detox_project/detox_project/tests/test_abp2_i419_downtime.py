@@ -27,20 +27,24 @@ class TestI419Downtime(IntegrationTestCase):
         self.assertIsNotNone(cf, "custom_downtime CF missing on Stock Entry")
         self.assertEqual(cf.label, "Downtime")
         self.assertEqual(cf.fieldtype, "Float")
+        # CR-03 (Change-Set FRD) re-parented Downtime out of the
+        # Manufacturing Process section into the dedicated Downtime
+        # section (custom_downtime_section), placed right after the
+        # Production Time fields. It now anchors on that section break.
         self.assertEqual(
-            cf.insert_after, "custom_end_time",
-            "Downtime must sit immediately after End Time inside the "
-            "Manufacturing Process section.",
+            cf.insert_after, "custom_downtime_section",
+            "Downtime must sit at the top of the dedicated Downtime "
+            "section (CR-03), immediately after the section break.",
         )
         self.assertEqual(cf.non_negative, 1, "Downtime cannot be negative")
         self.assertEqual(cf.default, "0")
 
     def test_downtime_inherits_section_visibility(self):
-        """The field has no depends_on of its own — it inherits from
-        the Manufacturing Process section (`custom_process_section`),
-        which scopes on stock_entry_type. This means non-MFG SE types
-        (Material Receipt / Issue / Transfer) don't see the field even
-        though the field itself has no depends_on."""
+        """The field has no depends_on of its own — it inherits from the
+        dedicated Downtime section (`custom_downtime_section`, CR-03),
+        which scopes on stock_entry_type == Manufacture. Non-Manufacture
+        SE types don't see the downtime block even though the field
+        itself has no depends_on."""
         dep = frappe.db.get_value(
             "Custom Field",
             {"dt": "Stock Entry", "fieldname": "custom_downtime"},
@@ -49,17 +53,17 @@ class TestI419Downtime(IntegrationTestCase):
         self.assertFalse(
             dep,
             "Downtime must NOT have its own depends_on — it inherits "
-            "from the parent Manufacturing Process section.",
+            "from the parent Downtime section.",
         )
         section_dep = frappe.db.get_value(
             "Custom Field",
-            {"dt": "Stock Entry", "fieldname": "custom_process_section"},
+            {"dt": "Stock Entry", "fieldname": "custom_downtime_section"},
             "depends_on",
         )
         self.assertTrue(
             section_dep,
-            "Manufacturing Process section is missing its depends_on — "
-            "Downtime would render on every SE type without it.",
+            "Downtime section is missing its depends_on — Downtime would "
+            "render on every SE type without it.",
         )
 
     def test_downtime_in_production_day_summary_print(self):
