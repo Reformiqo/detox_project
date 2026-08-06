@@ -36,6 +36,13 @@ def after_migrate():
 	drop_se_custom_cost_center_field()
 	heal_stock_entry_cost_center_field_order()
 	disable_legacy_wbs_naming_scripts()  # ABP2-I515
+	# DETOX Production Change-Set 01 — code-first CF/PS/CS (not in shared fixtures).
+	from detox_project.detox_project.change_set.cr01_production_plan_date import (
+		setup_cr01_production_plan_date,
+	)
+	setup_cr01_production_plan_date()  # CR-01 — Production Plan date correction
+	from detox_project.detox_project.change_set.cr03_downtime import install_cr03_downtime
+	install_cr03_downtime()  # CR-03 — Stock Entry downtime capture custom fields
 
 
 FM_CHILD_TABLES = (
