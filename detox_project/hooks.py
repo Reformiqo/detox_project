@@ -145,6 +145,8 @@ doc_events = {
 			# Plan onto the SE header + every item row, so ERPNext never falls
 			# back to Company.default_cost_center.
 			"detox_project.detox_project.overrides.stock_entry_manufacture.inherit_se_from_production_plan",
+			# CR-06 — cascade header cost_center into item + additional-cost rows (CL-16).
+			"detox_project.detox_project.change_set.cr050607_stock_entry.before_save",
 		],
 		"validate": [
 			# Same Production-Plan inheritance runs on validate too — covers
@@ -156,9 +158,29 @@ doc_events = {
 			"detox_project.detox_project.overrides.stock_entry_manufacture.validate_stock_entry_manufacture",
 			# CR-03 — downtime capture: reason reqd when downtime>0, time order, shift cap, net>=0.
 			"detox_project.detox_project.change_set.cr03_downtime.validate_downtime",
+			# CR-04 / CL-11 — default Manufacture source warehouse to the transfer WIP.
+			"detox_project.detox_project.change_set.cr04_material_transfer.default_wip_source_warehouse",
+			# CR-05/06/07 — CVAL-11/12/13/14/15 + amount recompute. MUST run last
+			# (header cost_center is set by the inherit hooks first, then cascaded, then checked).
+			"detox_project.detox_project.change_set.cr050607_stock_entry.validate",
 		],
-		"on_submit": "detox_project.detox_project.overrides.stock_entry_manufacture.rollup_total_produced_on_submit",
-		"on_cancel": "detox_project.detox_project.overrides.stock_entry_manufacture.rollup_total_produced_on_cancel",
+		"before_submit": [
+			# CR-04 — transfer coverage (CVAL-08) + over-consumption control (CVAL-09).
+			"detox_project.detox_project.change_set.cr04_material_transfer.before_submit",
+			# CR-05 — CVAL-10: block submit when Additional Costs have no FG target row.
+			"detox_project.detox_project.change_set.cr050607_stock_entry.before_submit",
+		],
+		"on_submit": [
+			"detox_project.detox_project.overrides.stock_entry_manufacture.rollup_total_produced_on_submit",
+			# CR-04 / CL-12 — transferred/consumed rollup onto Table-2 operation rows.
+			"detox_project.detox_project.change_set.cr04_material_transfer.rollup_transferred_consumed_on_submit",
+		],
+		"on_cancel": [
+			"detox_project.detox_project.overrides.stock_entry_manufacture.rollup_total_produced_on_cancel",
+			"detox_project.detox_project.change_set.cr04_material_transfer.rollup_transferred_consumed_on_cancel",
+		],
+		# CR-06 — CVAL-12 timeline audit when Allow Multiple Cost Centers is toggled.
+		"on_update": "detox_project.detox_project.change_set.cr050607_stock_entry.on_update",
 	},
 }
 
