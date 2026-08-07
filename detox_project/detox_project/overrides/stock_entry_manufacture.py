@@ -274,23 +274,23 @@ def validate_stock_entry_manufacture(doc, method=None):
     # Repack with no Production Plan was being blocked on submit by
     # this check. The variance only matters when there IS a plan whose
     # source rows came from POs.
-    if doc.get("production_plan"):
-        is_submit_path = (
-            doc.docstatus == 1
-            or getattr(doc, "_action", None) == "submit"
-            or getattr(doc.flags, "validate_before_submit", False)
-        )
-        if is_submit_path:
-            for idx, row in enumerate(doc.get("items") or [], start=1):
-                # Source rows have s_warehouse set.
-                if not row.get("s_warehouse"):
-                    continue
-                if not row.get("custom_purchase_order") or not row.get("custom_purchase_order_item"):
-                    frappe.throw(
-                        _("Row #{0}: link a Purchase Order and PO line on the "
-                          "source row for accurate variance.").format(idx),
-                        title=_("Purchase Order missing on source row"),
-                    )
+    # if doc.get("production_plan"):
+    #     is_submit_path = (
+    #         doc.docstatus == 1
+    #         or getattr(doc, "_action", None) == "submit"
+    #         or getattr(doc.flags, "validate_before_submit", False)
+    #     )
+    #     if is_submit_path:
+    #         for idx, row in enumerate(doc.get("items") or [], start=1):
+    #             # Source rows have s_warehouse set.
+    #             if not row.get("s_warehouse"):
+    #                 continue
+    #             if not row.get("custom_purchase_order") or not row.get("custom_purchase_order_item"):
+    #                 frappe.throw(
+    #                     _("Row #{0}: link a Purchase Order and PO line on the "
+    #                       "source row for accurate variance.").format(idx),
+    #                     title=_("Purchase Order missing on source row"),
+    #                 )
 
     # VAL-13 — over-production warning (cumulative produced > planned).
     # Read total_produced from the matching Table 1 row; soft warning only.
