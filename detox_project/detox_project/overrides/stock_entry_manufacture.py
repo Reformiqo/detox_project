@@ -267,13 +267,19 @@ def validate_stock_entry_manufacture(doc, method=None):
                 title=_("Finished Good missing"),
             )
 
-    # VAL-10 — every source row must carry a PO link on submit. Only
-    # enforced when the SE is plan-driven; standalone Repack / Material
-    # Transfer / Manufacture have no PO context to vary against.
+    # VAL-10 — source rows on a plan-driven SE should carry a PO link so
+    # the variance report can price them. Only checked when the SE is
+    # plan-driven; standalone Repack / Material Transfer / Manufacture
+    # have no PO context to vary against.
     # ABP2-I466 reopen (Sahil 2026-06-25, MAT-STE-00502): a standalone
     # Repack with no Production Plan was being blocked on submit by
     # this check. The variance only matters when there IS a plan whose
     # source rows came from POs.
+    # No-BOM plan reopen (2026-08-07): plan-driven SEs may legitimately
+    # have source rows with no PO at all, so the hard throw is now a
+    # soft warning — submit is never blocked. Rows that do carry a PO
+    # keep the full variance flow; unlinked rows simply price at 0 in
+    # Production Cost Comparison (which already guards for that).
     if doc.get("production_plan"):
         is_submit_path = (
             doc.docstatus == 1
@@ -281,16 +287,23 @@ def validate_stock_entry_manufacture(doc, method=None):
             or getattr(doc.flags, "validate_before_submit", False)
         )
         if is_submit_path:
-            for idx, row in enumerate(doc.get("items") or [], start=1):
+            missing_rows = [
+                idx
+                for idx, row in enumerate(doc.get("items") or [], start=1)
                 # Source rows have s_warehouse set.
-                if not row.get("s_warehouse"):
-                    continue
-                if not row.get("custom_purchase_order") or not row.get("custom_purchase_order_item"):
-                    frappe.throw(
-                        _("Row #{0}: link a Purchase Order and PO line on the "
-                          "source row for accurate variance.").format(idx),
-                        title=_("Purchase Order missing on source row"),
-                    )
+                if row.get("s_warehouse")
+                and (not row.get("custom_purchase_order")
+                     or not row.get("custom_purchase_order_item"))
+            ]
+            if missing_rows:
+                frappe.msgprint(
+                    _("Row(s) {0}: no Purchase Order linked on the source "
+                      "row — PO variance will not be calculated for these "
+                      "rows.").format(
+                        ", ".join("#{0}".format(i) for i in missing_rows)),
+                    title=_("Purchase Order not linked"),
+                    indicator="orange",
+                )
 
     # VAL-13 — over-production warning (cumulative produced > planned).
     # Read total_produced from the matching Table 1 row; soft warning only.

@@ -11,8 +11,13 @@ to vary against, so the throw is wrong.
 
 Fix: gate VAL-10 on `doc.production_plan` being present.
 
+No-BOM plan reopen (2026-08-07): even plan-driven SEs must not be
+blocked when source rows carry no PO — VAL-10 is now a soft
+`frappe.msgprint` warning, never a throw. Linked rows keep the full
+variance flow.
+
 These tests pin the new gate so a future refactor doesn't slip back
-into blocking standalone Repacks.
+into blocking submits.
 """
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -47,7 +52,9 @@ class TestI466RepackNoPlan(IntegrationTestCase):
         # Must NOT throw — variance check is plan-gated now.
         validate_stock_entry_manufacture(doc)
 
-    def test_repack_with_plan_missing_po_still_throws(self):
+    def test_plan_driven_missing_po_warns_but_does_not_block(self):
+        """No-BOM plan flow: a plan-driven SE whose source row has no PO
+        link must still pass validation (soft warning only)."""
         from detox_project.detox_project.overrides.stock_entry_manufacture import (
             validate_stock_entry_manufacture,
         )
@@ -58,9 +65,29 @@ class TestI466RepackNoPlan(IntegrationTestCase):
                     "custom_purchase_order": None,
                     "custom_purchase_order_item": None}],
         )
-        with self.assertRaises(frappe.ValidationError) as ctx:
-            validate_stock_entry_manufacture(doc)
-        self.assertIn("Purchase Order", str(ctx.exception))
+        frappe.clear_messages()
+        # Must NOT throw — VAL-10 is a soft warning now.
+        validate_stock_entry_manufacture(doc)
+        messages = " ".join(str(m) for m in (frappe.message_log or []))
+        self.assertIn("Purchase Order", messages)
+
+    def test_plan_driven_with_po_linked_no_warning(self):
+        """When the PO link IS present the flow is untouched — no
+        warning, no throw."""
+        from detox_project.detox_project.overrides.stock_entry_manufacture import (
+            validate_stock_entry_manufacture,
+        )
+        doc = _make_doc(
+            "Repack",
+            production_plan="PP-001",
+            items=[{"s_warehouse": "WH-A", "qty": 10,
+                    "custom_purchase_order": "PO-001",
+                    "custom_purchase_order_item": "PO-001-ROW1"}],
+        )
+        frappe.clear_messages()
+        validate_stock_entry_manufacture(doc)
+        messages = " ".join(str(m) for m in (frappe.message_log or []))
+        self.assertNotIn("Purchase Order not linked", messages)
 
     def test_manufacture_without_plan_submit_passes(self):
         """A standalone Manufacture SE (no plan) should also skip the
