@@ -276,6 +276,7 @@ function _fetch_operation_rows(frm) {
                 item.qty = 0;
                 item.cost_center = src.cost_center;
                 item.project = src.project;
+                item.custom_budget_category = src.budget_category;
                 if (src.expense_account) item.expense_account = src.expense_account;
                 if (frm.doc.from_warehouse) item.s_warehouse = frm.doc.from_warehouse;
             });

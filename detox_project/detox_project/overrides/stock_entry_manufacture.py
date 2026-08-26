@@ -50,7 +50,7 @@ def get_operation_rm_rows(production_plan: str, operation: str) -> list[dict]:
     rows = frappe.db.sql(
         """SELECT op.item_code, op.item_type, op.standard_uom, op.manual_uom,
                   op.standard_rate, op.qty_per_unit, op.multiply_by,
-                  op.cost_center, op.project
+                  op.cost_center, op.project, op.budget_category
            FROM `tabDetox Production Plan Operation` op
            WHERE op.parent = %s
              AND op.parenttype = 'Production Plan'
@@ -77,6 +77,7 @@ def get_operation_rm_rows(production_plan: str, operation: str) -> list[dict]:
             "expense_account": expense_account,
             "cost_center": r.cost_center,
             "project": r.project,
+            "budget_category": r.budget_category,
         })
     return enriched
 

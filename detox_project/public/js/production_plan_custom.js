@@ -352,6 +352,9 @@ const _MAT_FIELDS = [
      options: "Cost Center", reqd: 1},
     {fieldname: "project", label: __("Project"), fieldtype: "Link",
      options: "Project", reqd: 1},
+    // Filtered to the Project's Financial Model — see get_query below.
+    {fieldname: "budget_category", label: __("Budget Category"),
+     fieldtype: "Link", options: "Project Cost Category"},
 ];
 
 function _render_per_operation_cards(frm) {
@@ -469,6 +472,7 @@ function _render_rows_table(rows, opName) {
         <tr>
             <td>${escape(r.item_code)}</td>
             <td>${escape(r.item_type)}</td>
+            <td>${r.budget_category ? escape(r.budget_category) : "<em>—</em>"}</td>
             <td>${escape(r.standard_uom || r.manual_uom)}</td>
             <td class='text-right'>${formatNum(r.standard_rate)}</td>
             <td class='text-right'>${formatNum(r.qty_per_unit)}</td>
@@ -492,6 +496,7 @@ function _render_rows_table(rows, opName) {
                 <tr>
                     <th>${__("Item")}</th>
                     <th>${__("Type")}</th>
+                    <th>${__("Budget Category")}</th>
                     <th>${__("UOM")}</th>
                     <th class='text-right'>${__("Std Rate")}</th>
                     <th class='text-right'>${__("Qty / Unit")}</th>
@@ -534,6 +539,40 @@ function _open_material_dialog(frm, opName, existing_row) {
             d.hide();
         },
     });
+
+    // Budget Category → only the categories on this Project's Financial
+    // Model. Read the project lazily so it follows the dialog's own field.
+    if (d.fields_dict.budget_category) {
+        d.fields_dict.budget_category.get_query = () => ({
+            query: "detox_project.detox_project.api.get_project_budget_categories",
+            filters: {project: d.get_value("project")},
+        });
+    }
+
+    // Manual UOM → must be listed on the Item; rescale qty_per_unit by
+    // its conversion factor.
+    if (d.fields_dict.manual_uom) {
+        d._last_uom = (existing_row && existing_row.manual_uom) || "";
+        d.fields_dict.manual_uom.df.onchange = () => {
+            const item_code = d.get_value("item_code");
+            const uom = d.get_value("manual_uom");
+            // Dialog Link fields fire onchange twice (awesomplete select,
+            // then blur) — frappe's own guards need a frm/doc, which a
+            // Dialog has neither of. Also skips the prefill on edit.
+            if (!item_code || !uom || uom === d._last_uom) return;
+            d._last_uom = uom;
+            frappe.call({
+                method: "detox_project.detox_project.api.get_item_uom_factor",
+                args: {item_code: item_code, uom: uom},
+            }).then(r => {
+                if (!r.message) {
+                    frappe.throw(__("UOM {0} is not set on Item {1}. Add it in the Item's UOMs table first.",
+                                    [uom, item_code]));
+                }
+                d.set_value("qty_per_unit", flt(d.get_value("qty_per_unit")) / r.message);
+            });
+        };
+    }
 
     // Item Code → fetch Item.stock_uom into Standard UOM. Dialog fields
     // don't honour the docfield-level `fetch_from`; do it explicitly.

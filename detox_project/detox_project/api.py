@@ -1,6 +1,8 @@
 import frappe
 from frappe import _
 from frappe.utils import flt
+from frappe.query_builder import Field
+from frappe.query_builder.terms import ValueWrapper
 from decimal import Decimal, ROUND_HALF_UP
 
 
@@ -583,3 +585,71 @@ def get_fm_categories(doctype, txt, searchfield, start, page_len, filters):
 			ORDER BY category
 			LIMIT %(page_len)s OFFSET %(start)s
 		""", params)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def get_project_budget_categories(doctype, txt, searchfield, start, page_len, filters):
+	"""Budget Categories on a Project's Financial Model, tagged CAPEX / OPEX.
+
+	CAPEX -> FM Project Cost Item.category    (Project Cost Breakdown)
+	OPEX  -> FM Expense Item.custom_category  (Expense Heads)
+
+	The second column renders as the grey description in the link dropdown.
+	"""
+	project = (filters or {}).get("project")
+	if not project:
+		return []
+
+	financial_model = frappe.qb.DocType("Financial Model")
+	project_cost_item = frappe.qb.DocType("FM Project Cost Item")
+	expense_item = frappe.qb.DocType("FM Expense Item")
+	search_pattern = f"%{txt}%"
+
+	capex_categories = (
+		frappe.qb.from_(project_cost_item)
+		.join(financial_model)
+		.on(financial_model.name == project_cost_item.parent)
+		.select(project_cost_item.category, ValueWrapper("CAPEX"))
+		.where(financial_model.project == project)
+		.where(financial_model.docstatus < 2)
+		.where(project_cost_item.category != "")
+		.where(project_cost_item.category.like(search_pattern))
+	)
+	opex_categories = (
+		frappe.qb.from_(expense_item)
+		.join(financial_model)
+		.on(financial_model.name == expense_item.parent)
+		.select(expense_item.custom_category, ValueWrapper("OPEX"))
+		.where(financial_model.project == project)
+		.where(financial_model.docstatus < 2)
+		.where(expense_item.custom_category != "")
+		.where(expense_item.custom_category.like(search_pattern))
+	)
+
+	# `+` is UNION (not UNION ALL), so it dedupes for us.
+	return (
+		(capex_categories + opex_categories)
+		.orderby(Field("category"))
+		.limit(page_len)
+		.offset(start)
+		.run()
+	)
+
+
+@frappe.whitelist()
+def get_item_uom_factor(item_code, uom):
+	"""Conversion factor of `uom` on the Item, or None if it isn't listed.
+
+	erpnext's get_conversion_factor can't be used here: it falls back to
+	the global UOM Conversion Factor and then to 1.0, so a UOM missing
+	from the Item looks like a valid 1:1 one.
+	"""
+	if uom == frappe.db.get_value("Item", item_code, "stock_uom"):
+		return 1.0
+
+	return flt(frappe.db.get_value(
+		"UOM Conversion Detail",
+		{"parent": item_code, "parenttype": "Item", "uom": uom},
+		"conversion_factor",
+	)) or None

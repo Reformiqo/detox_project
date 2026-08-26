@@ -1404,6 +1404,10 @@ def setup_production_plan_no_bom():
 			"options": "Detox Production Plan Operation",
 			"insert_after": "custom_operations_section",
 			"depends_on": "eval:doc.custom_no_bom",
+			# Rows may be added / removed on a SUBMITTED plan. Frappe's
+			# parent-side check is row-count only, so this is what lifts
+			# "Not allowed to change Operations & Materials ... from 7 to 8".
+			"allow_on_submit": 1,
 			"description": (
 				"Table 2 — Flat per-row operations with materials / "
 				"services. Marking a row is_subcontracted converts it "
@@ -1791,6 +1795,21 @@ def setup_phase3_stock_entry_manufacture():
 			"in_list_view": 1,
 			"columns": 2,
 			"description": "Specific PO line — used to fetch the actual procured rate.",
+		},
+		# Budget Category — mirrors Detox Production Plan Operation.
+		# budget_category so the plan's budget tagging survives onto the
+		# Stock Entry rows it generates.
+		{
+			"dt": "Stock Entry Detail",
+			"fieldname": "custom_budget_category",
+			"label": "Budget Category",
+			"fieldtype": "Link",
+			"options": "Project Cost Category",
+			"insert_after": "project",
+			"description": (
+				"Budget line this consumption is booked against. Carried "
+				"over from the source Production Plan row."
+			),
 		},
 		# ABP2-I419 reopen item #7 (Raj 2026-06-19) — Additional Cost
 		# section needs separate Qty + Rate columns. The native child

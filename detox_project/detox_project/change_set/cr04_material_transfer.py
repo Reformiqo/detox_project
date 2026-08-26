@@ -509,6 +509,7 @@ def make_material_transfer_for_manufacture(production_plan: str, operation: str)
         row.qty = flt(src.get("qty_per_unit"))
         row.cost_center = src.get("cost_center")
         row.project = src.get("project")
+        row.custom_budget_category = src.get("budget_category")
         if src.get("expense_account"):
             row.expense_account = src.get("expense_account")
         if wip:
