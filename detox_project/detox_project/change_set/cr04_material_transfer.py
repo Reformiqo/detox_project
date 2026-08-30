@@ -503,6 +503,7 @@ def make_material_transfer_for_manufacture(production_plan: str, operation: str)
         row.item_name = src.get("item_name")
         row.uom = src.get("uom")
         row.stock_uom = src.get("stock_uom")
+        row.conversion_factor = flt(src.get("conversion_factor"))
         row.basic_rate = flt(src.get("basic_rate"))
         # qty_per_unit is the meaningful per-unit default; the user scales
         # it to the batch being staged.

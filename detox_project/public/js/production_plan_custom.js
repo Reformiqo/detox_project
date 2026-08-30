@@ -569,7 +569,6 @@ function _open_material_dialog(frm, opName, existing_row) {
                     frappe.throw(__("UOM {0} is not set on Item {1}. Add it in the Item's UOMs table first.",
                                     [uom, item_code]));
                 }
-                d.set_value("qty_per_unit", flt(d.get_value("qty_per_unit")) / r.message);
             });
         };
     }

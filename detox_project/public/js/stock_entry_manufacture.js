@@ -272,6 +272,7 @@ function _fetch_operation_rows(frm) {
                 item.item_name = src.item_name;
                 item.uom = src.uom;
                 item.stock_uom = src.stock_uom;
+                item.conversion_factor = src.conversion_factor;
                 item.basic_rate = src.basic_rate;
                 item.qty = 0;
                 item.cost_center = src.cost_center;

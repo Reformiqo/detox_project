@@ -23,6 +23,7 @@ from frappe.utils import flt
 from detox_project.detox_project.overrides.cc_project_guard import (
     _stock_entry_is_in_scope,
 )
+from detox_project.detox_project.api import get_item_uom_factor
 
 
 # Stock Entry types covered by Phase 3 logic.
@@ -62,6 +63,7 @@ def get_operation_rm_rows(production_plan: str, operation: str) -> list[dict]:
     for r in rows:
         uom = r.manual_uom or r.standard_uom
         # Default expense account from Item master (L11).
+        conversion_factor = get_item_uom_factor(r.item_code, uom)
         expense_account = _default_expense_account(r.item_code)
         # Item name for display.
         item_name = frappe.db.get_value("Item", r.item_code, "item_name") or r.item_code
@@ -71,6 +73,7 @@ def get_operation_rm_rows(production_plan: str, operation: str) -> list[dict]:
             "item_type": r.item_type,
             "uom": uom,
             "stock_uom": r.standard_uom,
+            "conversion_factor": flt(conversion_factor),
             "basic_rate": flt(r.standard_rate),
             "qty_per_unit": flt(r.qty_per_unit),
             "multiply_by": flt(r.multiply_by),
