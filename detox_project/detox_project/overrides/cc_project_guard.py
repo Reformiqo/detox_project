@@ -54,6 +54,21 @@ def validate_production_plan(doc, method=None):
 		_check_rows(doc, table_field, header_cc, header_pj, "Production Plan")
 
 
+def validate_production_plan_operations_after_submit(doc, method=None):
+	"""VAL-01 + VAL-02 for Table 2 only, on an update-after-submit.
+
+	Frappe skips `validate` on update-after-submit, so a materials row
+	added or blanked on a submitted plan would otherwise escape the
+	mandatory-everywhere guarantee. Table 1 is deliberately NOT checked
+	here: its fields are not allow_on_submit, so copying the header value
+	into a blank cell there would be rejected by Frappe's own post-submit
+	check straight afterwards.
+	"""
+	_check_rows(
+		doc, "custom_operations", doc.get(PP_CC_FIELD), doc.get("project"), "Production Plan"
+	)
+
+
 def _check_operation_uniqueness(doc) -> None:
 	"""Phase 7c rolled back per Sahil 2026-06-17 (Image #9 screenshot):
 	each Operation has MULTIPLE Materials rows (one per RM/Service item),

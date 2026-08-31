@@ -126,6 +126,11 @@ doc_events = {
 			"detox_project.detox_project.change_set.cr01_production_plan_date.validate_production_plan_dates",
 		],
 		"on_submit": "detox_project.detox_project.overrides.cc_project_guard.cascade_pp_to_work_orders",
+		# Table 2 (custom_operations) is fully allow_on_submit, and Frappe
+		# skips `validate` on an update-after-submit — so re-apply the
+		# CC/Project row guard here. (Multiply By is derived client-side,
+		# same as on a draft.)
+		"before_update_after_submit": "detox_project.detox_project.overrides.cc_project_guard.validate_production_plan_operations_after_submit",
 		# CR-01 — post-submit date revision: role gate, reason mandatory, stamp + timeline, sync draft links.
 		"on_update_after_submit": "detox_project.detox_project.change_set.cr01_production_plan_date.on_update_after_submit_dates",
 	},

@@ -276,9 +276,16 @@ function _recompute_total_standard_cost(cdt, cdn) {
     frappe.model.set_value(cdt, cdn, "total_standard_cost", qty * rate);
 }
 
+// Table 1 total — the multiplier behind every row's Multiply By. One
+// definition so the grid, the row writer and the dialog preview can
+// never drift apart.
+function _fg_total_qty(frm) {
+    return (frm.doc.custom_fg_items || [])
+        .reduce((acc, r) => acc + flt(r.qty_to_manufacture), 0);
+}
+
 function _recompute_multiply_by(frm) {
-    const fg = frm.doc.custom_fg_items || [];
-    const sum_qty = fg.reduce((acc, r) => acc + flt(r.qty_to_manufacture), 0);
+    const sum_qty = _fg_total_qty(frm);
     (frm.doc.custom_operations || []).forEach(op => {
         const want = flt(op.qty_per_unit) * sum_qty;
         if (Math.abs(flt(op.multiply_by) - want) > 0.0001) {
@@ -289,9 +296,7 @@ function _recompute_multiply_by(frm) {
 
 function _recompute_one_multiply_by(frm, op) {
     if (!op) return;
-    const fg = frm.doc.custom_fg_items || [];
-    const sum_qty = fg.reduce((acc, r) => acc + flt(r.qty_to_manufacture), 0);
-    const want = flt(op.qty_per_unit) * sum_qty;
+    const want = flt(op.qty_per_unit) * _fg_total_qty(frm);
     if (Math.abs(flt(op.multiply_by) - want) > 0.0001) {
         frappe.model.set_value(op.doctype, op.name, "multiply_by", want);
     }
@@ -570,6 +575,18 @@ function _open_material_dialog(frm, opName, existing_row) {
                                     [uom, item_code]));
                 }
             });
+        };
+    }
+
+    // Multiply By is read-only and derived, so the dialog would otherwise
+    // keep showing the OLD figure while the user retypes Qty per Unit.
+    // PREVIEW ONLY — the value actually saved is written by
+    // _recompute_one_multiply_by in primary_action, so a missed onchange
+    // can never persist a wrong figure.
+    if (d.fields_dict.qty_per_unit) {
+        d.fields_dict.qty_per_unit.df.onchange = () => {
+            d.set_value("multiply_by",
+                flt(d.get_value("qty_per_unit")) * _fg_total_qty(frm));
         };
     }
 
