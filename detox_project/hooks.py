@@ -13,7 +13,13 @@ app_version = "2.0.0"
 # Fixtures
 # --------------------------------------------------------------------------
 fixtures = [
-	{"dt": "Custom Field", "filters": [["module", "=", "Detox Project"]]},
+	# `Blanket Order-currency` is excluded: ERPNext v16 ships `currency` as a
+	# standard Blanket Order field, so re-exporting the legacy custom field of
+	# the same name makes fixture sync abort on migrate.
+	{
+		"dt": "Custom Field",
+		"filters": [["module", "=", "Detox Project"], ["name", "!=", "Blanket Order-currency"]],
+	},
 	{"dt": "Property Setter", "filters": [["module", "=", "Detox Project"]]},
 	# ABP2-I515 — replicate SEPPL's Project Budget Plan linked-doctype config
 	# (Financial Model / WBS Element / Sub WBS Element / WBS Allocation) to
