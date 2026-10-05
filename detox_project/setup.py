@@ -54,6 +54,8 @@ def after_migrate():
 		install as install_cr04_material_transfer,
 	)
 	install_cr04_material_transfer()  # CR-04 — Material Transfer for Manufacture CFs
+	from detox_project.detox_project.change_set.abp2_i782_fixlist import install as install_abp2_i782
+	install_abp2_i782()  # ABP2-I782 — Multiply By removal, PO field hiding, UOM conversion, budget display
 
 
 FM_CHILD_TABLES = (

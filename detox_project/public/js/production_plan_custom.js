@@ -1,6 +1,6 @@
 // ABP2-I419 Production Plan client logic for No-BOM mode.
 // eslint-disable-next-line no-console
-console.log("[ABP2-I419] production_plan_custom.js Phase 7d loaded");
+console.log("[ABP2-I782] production_plan_custom.js loaded");
 
 //
 // Layers (cumulative):
@@ -14,6 +14,20 @@ console.log("[ABP2-I419] production_plan_custom.js Phase 7d loaded");
 //             card tables. Canonical custom_operations grid hidden;
 //             one card per Process row drives add/edit/delete via
 //             Frappe Dialog modals.
+//   9f14c2d/710a98a (Sanket, Aug 2026) — Budget Category (budget_category,
+//             get_project_budget_categories), item-level UOM conversion
+//             (detox_project.api.get_item_uom_factor) wired into the
+//             dialog's manual_uom onchange + get_operation_rm_rows.
+//   f927e62 (Sanket, Aug 2026) — every Table 2 field allow_on_submit=1 +
+//             post-submit CC/Project re-guard (cc_project_guard.py).
+//   ABP2-I782 (2026-10-05) — "Multiply By" removed: each row now stands
+//             alone (Qty x rate = Amount, no Finished Goods qty
+//             involved). Manual UOM change recalculates the effective
+//             rate via get_uom_factor (item-level UOM data first, global
+//             Month/Day/Hour + TON/Tonne master fallback second — see
+//             change_set/abp2_i782_fixlist.py). Project Budget (read-only
+//             Financial Model display, NOT the same thing as Budget
+//             Category above) added.
 
 frappe.ui.form.on("Production Plan", {
     onload(frm) {
@@ -24,7 +38,6 @@ frappe.ui.form.on("Production Plan", {
 
     refresh(frm) {
         _apply_no_bom_visibility(frm);
-        _recompute_multiply_by(frm);
         _refresh_operation_options(frm);
         _render_per_operation_cards(frm);
         _sync_project_into_proxy(frm);
@@ -46,6 +59,9 @@ frappe.ui.form.on("Production Plan", {
     // accept the value on save.
     custom_project(frm) {
         if (frm.doc.custom_project !== frm.doc.project) {
+            // set_value("project", ...) below fires the "project" handler,
+            // which does the actual budget fetch (ABP2-I782) — one place,
+            // no duplicate frappe.call.
             frm.set_value("project", frm.doc.custom_project);
         }
         _render_per_operation_cards(frm);
@@ -57,9 +73,43 @@ frappe.ui.form.on("Production Plan", {
         if (frm.doc.project !== frm.doc.custom_project) {
             frm.set_value("custom_project", frm.doc.project);
         }
+        _fetch_project_budget(frm);
         _render_per_operation_cards(frm);
     },
 });
+
+// ABP2-I782 req #4 — Project Budget (read-only display). Fetched only on
+// the `project` field's OWN change event (user picking/changing the
+// Project), never on refresh/onload — refetching on every refresh would
+// call frm.set_value on an already-saved/submitted doc just from opening
+// it, marking it dirty for no reason. Pre-ABP2-I782 Production Plans that
+// already have a Project but predate this fix simply show blank budget
+// fields until the Project is reselected; display-only, no calculation
+// depends on it, so that's an acceptable gap (confirmed with the manager).
+// NOT the same thing as 9f14c2d's "Budget Category" (budget_category on
+// Table 2 rows, Project Cost Category) — this is a header-level display
+// of the Financial Model itself.
+function _fetch_project_budget(frm) {
+    if (!frm.fields_dict.custom_project_budget) return;  // CF not migrated yet
+    if (!frm.doc.project) {
+        frm.set_value("custom_project_budget", "");
+        frm.set_value("custom_budget_type", "");
+        frm.set_value("custom_budget_start_date", "");
+        frm.set_value("custom_budget_end_date", "");
+        return;
+    }
+    frappe.call({
+        method: "detox_project.detox_project.change_set.abp2_i782_fixlist.get_approved_financial_model",
+        args: {project: frm.doc.project},
+        callback(r) {
+            const d = (r && r.message) || {};
+            frm.set_value("custom_project_budget", d.project_budget || "");
+            frm.set_value("custom_budget_type", d.budget_type || "");
+            frm.set_value("custom_budget_start_date", d.budget_start_date || "");
+            frm.set_value("custom_budget_end_date", d.budget_end_date || "");
+        },
+    });
+}
 
 function _sync_project_into_proxy(frm) {
     if (frm.doc.project && frm.doc.project !== frm.doc.custom_project) {
@@ -197,30 +247,93 @@ frappe.ui.form.on("Detox Production Plan FG", {
     },
 
     qty_to_manufacture(frm, cdt, cdn) {
+        // ABP2-I782 — Table 1 (Finished Goods) qty no longer feeds Table 2
+        // row amounts at all ("Multiply By" removal, req #1). Only this
+        // row's own total_standard_cost (FG costing, unrelated table) uses it.
         _recompute_total_standard_cost(cdt, cdn);
-        _recompute_multiply_by(frm);
-        _render_per_operation_cards(frm);
     },
 
     standard_costing_rate(frm, cdt, cdn) {
         _recompute_total_standard_cost(cdt, cdn);
     },
-
-    custom_fg_items_remove(frm) {
-        _recompute_multiply_by(frm);
-        _render_per_operation_cards(frm);
-    },
 });
 
 frappe.ui.form.on("Detox Production Plan Operation", {
-    qty_per_unit(frm, cdt, cdn) {
-        _recompute_one_multiply_by(frm, locals[cdt][cdn]);
+    qty(frm, cdt, cdn) {
+        _recompute_row_amount(frm, locals[cdt][cdn]);
         _render_per_operation_cards(frm);
+    },
+    standard_rate(frm, cdt, cdn) {
+        _recompute_row_amount(frm, locals[cdt][cdn]);
+        _render_per_operation_cards(frm);
+    },
+    manual_uom(frm, cdt, cdn) {
+        // ABP2-I782 req #3 — UOM change recalculates the effective rate
+        // (e.g. ₹27,000/Month -> ₹900/Day), not just the Amount. Grid-row
+        // counterpart of the dialog's manual_uom onchange below.
+        _recompute_row_amount(frm, locals[cdt][cdn]);
+        _render_per_operation_cards(frm);
+    },
+    custom_operations_add(frm, cdt, cdn) {
+        // New rows default Qty to 1 per req #1 ("each row stands alone").
+        // The docfield `default: "1"` covers inserts via the canonical
+        // grid; the Phase 7d dialog (_open_material_dialog) sets it too.
+        const row = locals[cdt][cdn];
+        if (!row.qty) frappe.model.set_value(cdt, cdn, "qty", 1);
     },
     custom_operations_remove(frm) {
         _render_per_operation_cards(frm);
     },
 });
+
+// ABP2-I782 req #1 + #3 — Amount = Qty x effective rate. Effective rate is
+// Standard Rate unless Manual UOM is set and differs from Standard UOM, in
+// which case get_uom_factor_api is consulted (item-level UOM Conversion
+// Detail first, global Month/Day/Hour + TON/Tonne master fallback second —
+// see change_set.abp2_i782_fixlist.get_uom_factor) and the rate is
+// MULTIPLIED by that factor (factor = "how many Standard UOM per 1 Manual
+// UOM", same direction detox_project.api.get_item_uom_factor already
+// uses — e.g. ₹27,000/Month x 1/30 = ₹900/Day). Mirrors
+// change_set.abp2_i782_fixlist._effective_rate() — kept in sync manually
+// since client/server can't share Python; both are covered by
+// test_abp2_i782_production_plan_uom.py.
+function _recompute_row_amount(frm, row) {
+    if (!row) return;
+    const qty = flt(row.qty) || 1;
+    const std_rate = flt(row.standard_rate);
+    const std_uom = row.standard_uom;
+    const man_uom = row.manual_uom;
+    const apply = (rate, factor) => {
+        frappe.model.set_value(row.doctype, row.name, "conversion_factor", factor || 0);
+        frappe.model.set_value(row.doctype, row.name, "amount", flt(qty * rate));
+        _render_per_operation_cards(frm);
+    };
+    if (!man_uom || man_uom === std_uom || !row.item_code) {
+        apply(std_rate, null);
+        return;
+    }
+    frappe.call({
+        method: "detox_project.detox_project.change_set.abp2_i782_fixlist.get_uom_factor_api",
+        args: {item_code: row.item_code, uom: man_uom},
+        callback(r) {
+            const factor = r && r.message;
+            if (factor) {
+                apply(flt(std_rate * factor), factor);
+            } else {
+                // No conversion found anywhere (item-level or global
+                // master) — don't guess (ticket's own instruction). Keep
+                // Amount on the raw Standard Rate and tell the user why,
+                // instead of silently using the wrong number like the
+                // original "Multiply By" bug did.
+                apply(std_rate, null);
+                frappe.show_alert({
+                    message: __("No UOM conversion found for {0} on {1} (checked Item UOMs and the global UOM Conversion Factor master) — Amount uses Standard Rate as-is.", [man_uom, row.item_code]),
+                    indicator: "orange",
+                });
+            }
+        },
+    });
+}
 
 // --------------------------------------------------------------------------
 // Visibility + simple computations (Phase 1)
@@ -276,31 +389,12 @@ function _recompute_total_standard_cost(cdt, cdn) {
     frappe.model.set_value(cdt, cdn, "total_standard_cost", qty * rate);
 }
 
-// Table 1 total — the multiplier behind every row's Multiply By. One
-// definition so the grid, the row writer and the dialog preview can
-// never drift apart.
-function _fg_total_qty(frm) {
-    return (frm.doc.custom_fg_items || [])
-        .reduce((acc, r) => acc + flt(r.qty_to_manufacture), 0);
-}
-
-function _recompute_multiply_by(frm) {
-    const sum_qty = _fg_total_qty(frm);
-    (frm.doc.custom_operations || []).forEach(op => {
-        const want = flt(op.qty_per_unit) * sum_qty;
-        if (Math.abs(flt(op.multiply_by) - want) > 0.0001) {
-            frappe.model.set_value(op.doctype, op.name, "multiply_by", want);
-        }
-    });
-}
-
-function _recompute_one_multiply_by(frm, op) {
-    if (!op) return;
-    const want = flt(op.qty_per_unit) * _fg_total_qty(frm);
-    if (Math.abs(flt(op.multiply_by) - want) > 0.0001) {
-        frappe.model.set_value(op.doctype, op.name, "multiply_by", want);
-    }
-}
+// ABP2-I782 — _fg_total_qty / _recompute_multiply_by / _recompute_one_multiply_by
+// (f927e62's Table-1-qty-driven "Multiply By" engine) deleted here: once no
+// row calculation multiplies by Finished Goods quantity (req #1), nothing
+// in this file needs "the multiplier behind every row" anymore. The dialog's
+// qty_per_unit preview that called these is removed too (see
+// _open_material_dialog below).
 
 function _refresh_operation_options(frm) {
     const grid = frm.fields_dict.custom_operations && frm.fields_dict.custom_operations.grid;
@@ -329,10 +423,14 @@ const _MAT_FIELDS = [
      options: "UOM"},
     {fieldname: "standard_rate", label: __("Standard Rate"),
      fieldtype: "Currency", reqd: 1, in_list_view: true},
-    {fieldname: "qty_per_unit", label: __("Qty per Unit"), fieldtype: "Float",
-     in_list_view: true},
-    {fieldname: "multiply_by", label: __("Multiply By"), fieldtype: "Float",
+    // ABP2-I782 — Qty replaces Multiply By: this row stands alone
+    // (Qty x effective rate = Amount), default 1, no FG multiplication.
+    {fieldname: "qty", label: __("Qty"), fieldtype: "Float",
+     default: 1, in_list_view: true},
+    {fieldname: "amount", label: __("Amount"), fieldtype: "Currency",
      read_only: 1, in_list_view: true},
+    {fieldname: "qty_per_unit", label: __("Qty per Unit (reference only)"),
+     fieldtype: "Float"},
     {fieldname: "operation_seq", label: __("Operation Seq"), fieldtype: "Int"},
     {fieldname: "subcontract_section", label: __("Subcontracting"),
      fieldtype: "Section Break", collapsible: 1},
@@ -480,8 +578,8 @@ function _render_rows_table(rows, opName) {
             <td>${r.budget_category ? escape(r.budget_category) : "<em>—</em>"}</td>
             <td>${escape(r.standard_uom || r.manual_uom)}</td>
             <td class='text-right'>${formatNum(r.standard_rate)}</td>
-            <td class='text-right'>${formatNum(r.qty_per_unit)}</td>
-            <td class='text-right'>${formatNum(r.multiply_by)}</td>
+            <td class='text-right'>${formatNum(r.qty)}</td>
+            <td class='text-right'>${formatNum(r.amount)}</td>
             <td>${fmtCheck(r.is_subcontracted)}</td>
             <td class='text-right' style='white-space:nowrap'>
                 <button class='btn btn-xs btn-default'
@@ -504,8 +602,8 @@ function _render_rows_table(rows, opName) {
                     <th>${__("Budget Category")}</th>
                     <th>${__("UOM")}</th>
                     <th class='text-right'>${__("Std Rate")}</th>
-                    <th class='text-right'>${__("Qty / Unit")}</th>
-                    <th class='text-right'>${__("Multiply By")}</th>
+                    <th class='text-right'>${__("Qty")}</th>
+                    <th class='text-right'>${__("Amount")}</th>
                     <th>${__("Subc.")}</th>
                     <th></th>
                 </tr>
@@ -533,11 +631,13 @@ function _open_material_dialog(frm, opName, existing_row) {
             row.operation_name = opName;
             _MAT_FIELDS.forEach(f => {
                 if (!f.fieldname || f.fieldtype === "Section Break"
-                    || f.fieldtype === "Column Break") return;
+                    || f.fieldtype === "Column Break" || f.fieldname === "amount") return;
                 row[f.fieldname] = values[f.fieldname];
             });
-            // Pre-fill multiply_by from Phase 1 logic.
-            _recompute_one_multiply_by(frm, row);
+            if (!row.qty) row.qty = 1;  // ABP2-I782 — "each row stands alone", default 1
+            // ABP2-I782 — Amount = Qty x effective rate (was: pre-fill
+            // multiply_by from Phase 1 FG-multiplication logic).
+            _recompute_row_amount(frm, row);
             frm.refresh_field("custom_operations");
             _render_per_operation_cards(frm);
             frm.dirty();
@@ -554,8 +654,13 @@ function _open_material_dialog(frm, opName, existing_row) {
         });
     }
 
-    // Manual UOM → must be listed on the Item; rescale qty_per_unit by
-    // its conversion factor.
+    // Manual UOM → ABP2-I782: was a hard-throw ("UOM X is not set on Item
+    // Y...") whenever the Item had no UOM Conversion Detail row for this
+    // UOM — exactly the ticket's own complaint case ("Items have only one
+    // UOM... Supply of Labour = Month only"). Now composes get_uom_factor
+    // (item-level first, global Month/Day/Hour + TON/Tonne master
+    // fallback second) and previews the Amount live; only throws if
+    // NEITHER source resolves a factor at all.
     if (d.fields_dict.manual_uom) {
         d._last_uom = (existing_row && existing_row.manual_uom) || "";
         d.fields_dict.manual_uom.df.onchange = () => {
@@ -566,27 +671,25 @@ function _open_material_dialog(frm, opName, existing_row) {
             // Dialog has neither of. Also skips the prefill on edit.
             if (!item_code || !uom || uom === d._last_uom) return;
             d._last_uom = uom;
+            const std_uom = d.get_value("standard_uom");
+            if (uom === std_uom) {
+                d.set_value("amount", flt(d.get_value("qty") || 1) * flt(d.get_value("standard_rate")));
+                return;
+            }
             frappe.call({
-                method: "detox_project.detox_project.api.get_item_uom_factor",
+                method: "detox_project.detox_project.change_set.abp2_i782_fixlist.get_uom_factor_api",
                 args: {item_code: item_code, uom: uom},
             }).then(r => {
-                if (!r.message) {
-                    frappe.throw(__("UOM {0} is not set on Item {1}. Add it in the Item's UOMs table first.",
+                const factor = r && r.message;
+                if (!factor) {
+                    frappe.throw(__("No UOM conversion found for {0} on Item {1} (checked the Item's own UOMs and the global UOM Conversion Factor master). Add one in the Item's UOM table, or in UOM Conversion Factor.",
                                     [uom, item_code]));
+                    return;
                 }
+                const qty = flt(d.get_value("qty")) || 1;
+                const rate = flt(d.get_value("standard_rate")) * factor;
+                d.set_value("amount", flt(qty * rate));
             });
-        };
-    }
-
-    // Multiply By is read-only and derived, so the dialog would otherwise
-    // keep showing the OLD figure while the user retypes Qty per Unit.
-    // PREVIEW ONLY — the value actually saved is written by
-    // _recompute_one_multiply_by in primary_action, so a missed onchange
-    // can never persist a wrong figure.
-    if (d.fields_dict.qty_per_unit) {
-        d.fields_dict.qty_per_unit.df.onchange = () => {
-            d.set_value("multiply_by",
-                flt(d.get_value("qty_per_unit")) * _fg_total_qty(frm));
         };
     }
 
@@ -617,6 +720,7 @@ function _open_material_dialog(frm, opName, existing_row) {
             cost_center: frm.doc.custom_cost_center,
             project: frm.doc.project,
             item_type: "Raw Material",
+            qty: 1,
         });
     }
     d.show();

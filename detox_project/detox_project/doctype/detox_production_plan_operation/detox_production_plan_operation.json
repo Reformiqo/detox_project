@@ -13,7 +13,10 @@
   "column_break_rate",
   "standard_uom",
   "manual_uom",
+  "conversion_factor",
   "standard_rate",
+  "qty",
+  "amount",
   "qty_per_unit",
   "multiply_by",
   "section_break_subcontract",
@@ -87,6 +90,16 @@
   {
    "allow_on_submit": 1,
    "columns": 1,
+   "description": "ABP2-I782 — how many Standard UOM make up 1 Manual UOM (e.g. Month->Day = 1/30), via detox_project.api.get_item_uom_factor (item-level UOM Conversion Detail) first, falling back to the global UOM Conversion Factor master. Standard Rate x this = the rate actually used in Amount. Read-only — recomputed by the client script / Production Plan validate hook, not user-entered.",
+   "fieldname": "conversion_factor",
+   "fieldtype": "Float",
+   "label": "Conversion Factor",
+   "precision": "6",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
    "fieldname": "standard_rate",
    "fieldtype": "Currency",
    "in_list_view": 1,
@@ -96,7 +109,27 @@
   {
    "allow_on_submit": 1,
    "columns": 1,
-   "description": "Required qty per finished unit. Multiply By = this x SUM(Table 1 qty).",
+   "default": "1",
+   "description": "ABP2-I782 — this row stands alone: Qty x effective rate (Standard Rate, converted via Conversion Factor when Manual UOM is set) = Amount. Does NOT multiply by Table 1 (Finished Goods) quantity — that was the Multiply By bug.",
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty"
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
+   "description": "ABP2-I782 — Qty x effective rate. Read-only, computed.",
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
+   "description": "Required qty per finished unit. No longer used for any row calculation (ABP2-I782) — kept for reference / subcontract-PO qty default only.",
    "fieldname": "qty_per_unit",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -105,10 +138,11 @@
   {
    "allow_on_submit": 1,
    "columns": 1,
-   "description": "Auto-computed = Qty per Unit x SUM of Table 1 Qty to Manufacture.",
+   "description": "ABP2-I782 — hidden. Was auto-computed = Qty per Unit x SUM of Table 1 Qty to Manufacture, which wrongly multiplied service/day-rate rows by the whole Finished Goods quantity (e.g. a ₹27,000/Month labour row became ~3,000 months). Field kept (not deleted) so historical Production Plans retain their stored value; no longer read by any calculation, SE fetch or report.",
    "fieldname": "multiply_by",
    "fieldtype": "Float",
-   "in_list_view": 1,
+   "hidden": 1,
+   "in_list_view": 0,
    "label": "Multiply By",
    "read_only": 1
   },

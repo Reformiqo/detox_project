@@ -141,7 +141,12 @@ def create_service_pos_from_plan(plan: str) -> dict:
             uom = row.manual_uom or row.standard_uom
             if uom:
                 item.uom = uom
-            item.qty = flt(row.multiply_by) or flt(row.qty_per_unit) or 1
+            # ABP2-I782: prefer the new standalone `qty` field (req #1 — each
+            # row stands alone, no FG multiplication). `multiply_by` is kept
+            # as a fallback only so already-submitted/old plans (created
+            # before this fix, which still carry an FG-multiplied value)
+            # keep producing the same PO qty they always have.
+            item.qty = flt(row.qty) or flt(row.multiply_by) or flt(row.qty_per_unit) or 1
             item.rate = flt(row.standard_rate)
             item.schedule_date = plan_doc.posting_date
             if "cost_center" in item.as_dict():

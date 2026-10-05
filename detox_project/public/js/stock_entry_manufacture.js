@@ -362,4 +362,103 @@ frappe.ui.form.on("Landed Cost Taxes and Charges", {
     custom_rate: _recompute_addl_cost_amount,
     custom_service_item: _fetch_addl_cost_service_item_uom,
     custom_purchase_order_item: _fetch_addl_cost_po_item,
+    // ABP2-I782 req #3 — display-only Conversion Factor between the
+    // Service Item's own stock UOM and this row's UOM (via get_uom_factor_api
+    // — item-level UOM data first, global master fallback second).
+    // Deliberately does NOT auto-adjust custom_rate: unlike Detox
+    // Production Plan Operation / Detox Stock Entry Service Item, this
+    // child table has no "Standard Rate at Standard UOM" baseline field
+    // to convert from — custom_rate here is either typed directly or
+    // fetched from a PO line (which is already correctly priced for ITS
+    // OWN uom via _fetch_addl_cost_po_item above). Flagged to the manager
+    // as a narrower scope than the other two tables for exactly this
+    // reason.
+    custom_uom(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (frm.doctype !== "Stock Entry" || !row.custom_service_item || !row.custom_uom) return;
+        frappe.call({
+            method: "detox_project.detox_project.change_set.abp2_i782_fixlist.get_uom_factor_api",
+            args: {item_code: row.custom_service_item, uom: row.custom_uom},
+            callback(res) {
+                frappe.model.set_value(cdt, cdn, "custom_conversion_factor", (res && res.message) || 0);
+            },
+        });
+    },
+});
+
+// --------------------------------------------------------------------------
+// ABP2-I782 req #3 — UOM conversion for Items (Stock Entry Detail) and
+// Service Items (Detox Stock Entry Service Item) rows sourced from a
+// Production Plan Operation. Gives the user an immediate recomputed rate
+// when they change a row's UOM AFTER the initial Process fetch (e.g.
+// Month -> Day) — upstream (710a98a) only sets conversion_factor at fetch
+// time (_fetch_operation_rows above); there was no live handler for a
+// later manual UOM change in the grid until this ticket. The server-side
+// safety net (recompute_item_conversion_factors / recompute_service_item_rates
+// in change_set/abp2_i782_fixlist.py) runs regardless of whether this
+// client code ran — e.g. rows added by the DB-only 'CS1 Service Item
+// Reroute' script.
+// --------------------------------------------------------------------------
+function _live_recompute_uom_factor(frm, cdt, cdn, uom_field, rate_field, factor_field, also_set_amount) {
+    const row = locals[cdt][cdn];
+    if (!frm.doc.production_plan || !row.item_code || !row[uom_field]) return;
+    frappe.call({
+        method: "detox_project.detox_project.change_set.abp2_i782_fixlist.get_plan_operation_rate",
+        args: {
+            production_plan: frm.doc.production_plan,
+            item_code: row.item_code,
+            uom: row[uom_field],
+            operation: frm.doc.custom_process_selection || null,
+        },
+        callback(r) {
+            const op = (r && r.message) || {};
+            if (!op.standard_uom) return;  // not a plan-sourced item — nothing to convert
+            if (row[uom_field] === op.standard_uom) {
+                frappe.model.set_value(cdt, cdn, factor_field, 0);
+                return;
+            }
+            if (!op.conversion_factor) {
+                frappe.show_alert({
+                    message: __("No UOM conversion found for {0} on {1} (checked Item UOMs and the global UOM Conversion Factor master) — rate left as-is.", [row[uom_field], row.item_code]),
+                    indicator: "orange",
+                });
+                return;
+            }
+            frappe.model.set_value(cdt, cdn, factor_field, op.conversion_factor);
+            if (also_set_amount) {
+                // ONLY for Detox Stock Entry Service Item (rate_field=
+                // "rate"): that doctype has no core ERPNext amount engine
+                // behind it. On the real site the DB-only 'Service Items
+                // Grid' Client Script does qty*rate on a `rate` change,
+                // but that script doesn't exist locally. Stock Entry
+                // Detail (rate_field="basic_rate", also_set_amount=false)
+                // must NOT be touched here: core already recomputes
+                // `amount` from `basic_rate`/`conversion_factor`/`qty`
+                // with its own formula (transfer_qty x basic_rate +
+                // additional_cost) the instant factor_field changes —
+                // setting rate/amount here too would race/conflict.
+                frappe.model.set_value(cdt, cdn, rate_field, op.rate);
+                if (row.qty) {
+                    frappe.model.set_value(cdt, cdn, "amount", flt(row.qty) * flt(op.rate));
+                }
+            }
+        },
+    });
+}
+
+frappe.ui.form.on("Stock Entry Detail", {
+    uom(frm, cdt, cdn) {
+        if (!_is_mfg(frm)) return;
+        const row = locals[cdt][cdn];
+        if (row.custom_purchase_order) return;  // PO-sourced rate — leave it
+        _live_recompute_uom_factor(frm, cdt, cdn, "uom", "basic_rate", "conversion_factor", false);
+    },
+});
+
+frappe.ui.form.on("Detox Stock Entry Service Item", {
+    uom(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (row.purchase_order) return;  // PO-sourced rate — leave it (Service PO)
+        _live_recompute_uom_factor(frm, cdt, cdn, "uom", "rate", "conversion_factor", true);
+    },
 });

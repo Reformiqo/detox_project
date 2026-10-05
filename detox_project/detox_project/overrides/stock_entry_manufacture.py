@@ -23,7 +23,13 @@ from frappe.utils import flt
 from detox_project.detox_project.overrides.cc_project_guard import (
     _stock_entry_is_in_scope,
 )
-from detox_project.detox_project.api import get_item_uom_factor
+# ABP2-I782 (2026-10-05): was `from detox_project.detox_project.api import
+# get_item_uom_factor` — swapped for the composing wrapper so this fetch
+# also falls back to the global UOM Conversion Factor master when the item
+# has no per-item UOM Conversion Detail row (this ticket's actual
+# complaint; get_item_uom_factor deliberately never falls back on its
+# own). See abp2_i782_fixlist.py's module docstring for the full reasoning.
+from detox_project.detox_project.change_set.abp2_i782_fixlist import get_uom_factor
 
 
 # Stock Entry types covered by Phase 3 logic.
@@ -45,12 +51,21 @@ def get_operation_rm_rows(production_plan: str, operation: str) -> list[dict]:
     Process on the SE header, the client clears `items` then calls this
     method to repopulate with the operation's source rows (item, UOM,
     rate, qty_per_unit) — qty starts blank for the user to enter.
+
+    ABP2-I782: `multiply_by` is no longer selected/returned — it is a
+    hidden, unused field now (req #1, "Create -> Stock Entry... do not
+    read multiply_by any more"). `basic_rate` stays the raw Standard Rate
+    (NOT divided/converted) — 710a98a's design already handles the UOM
+    conversion correctly via the native `conversion_factor` field (core
+    ERPNext prices via transfer_qty = qty x conversion_factor, then
+    transfer_qty x basic_rate); dividing basic_rate here as well would
+    double-apply the conversion.
     """
     if not production_plan or not operation:
         return []
     rows = frappe.db.sql(
         """SELECT op.item_code, op.item_type, op.standard_uom, op.manual_uom,
-                  op.standard_rate, op.qty_per_unit, op.multiply_by,
+                  op.standard_rate, op.qty_per_unit,
                   op.cost_center, op.project, op.budget_category
            FROM `tabDetox Production Plan Operation` op
            WHERE op.parent = %s
@@ -62,8 +77,11 @@ def get_operation_rm_rows(production_plan: str, operation: str) -> list[dict]:
     enriched = []
     for r in rows:
         uom = r.manual_uom or r.standard_uom
+        # ABP2-I782: get_uom_factor composes get_item_uom_factor (item-level
+        # UOM Conversion Detail, precise) with a global UOM Conversion
+        # Factor master fallback — see abp2_i782_fixlist.py module docstring.
+        conversion_factor = get_uom_factor(r.item_code, uom)
         # Default expense account from Item master (L11).
-        conversion_factor = get_item_uom_factor(r.item_code, uom)
         expense_account = _default_expense_account(r.item_code)
         # Item name for display.
         item_name = frappe.db.get_value("Item", r.item_code, "item_name") or r.item_code
@@ -76,7 +94,6 @@ def get_operation_rm_rows(production_plan: str, operation: str) -> list[dict]:
             "conversion_factor": flt(conversion_factor),
             "basic_rate": flt(r.standard_rate),
             "qty_per_unit": flt(r.qty_per_unit),
-            "multiply_by": flt(r.multiply_by),
             "expense_account": expense_account,
             "cost_center": r.cost_center,
             "project": r.project,
@@ -229,7 +246,8 @@ def inherit_se_from_production_plan(doc, method=None):
 # Validate hook
 # --------------------------------------------------------------------------
 def validate_stock_entry_manufacture(doc, method=None):
-    """Phase 3 validations (VAL-08, VAL-10, VAL-11, VAL-12, VAL-13).
+    """Phase 3 validations (VAL-08, VAL-11, VAL-12, VAL-13). VAL-10 removed
+    ABP2-I782 req #2 (2026-10-05) — see the comment at its old location.
 
     All fire ONLY on Manufacturing-flow SEs. CC + Project enforcement
     stays in cc_project_guard.validate_stock_entry.
@@ -271,30 +289,17 @@ def validate_stock_entry_manufacture(doc, method=None):
                 title=_("Finished Good missing"),
             )
 
-    # VAL-10 — every source row must carry a PO link on submit. Only
-    # enforced when the SE is plan-driven; standalone Repack / Material
-    # Transfer / Manufacture have no PO context to vary against.
-    # ABP2-I466 reopen (Sahil 2026-06-25, MAT-STE-00502): a standalone
-    # Repack with no Production Plan was being blocked on submit by
-    # this check. The variance only matters when there IS a plan whose
-    # source rows came from POs.
-    # if doc.get("production_plan"):
-    #     is_submit_path = (
-    #         doc.docstatus == 1
-    #         or getattr(doc, "_action", None) == "submit"
-    #         or getattr(doc.flags, "validate_before_submit", False)
-    #     )
-    #     if is_submit_path:
-    #         for idx, row in enumerate(doc.get("items") or [], start=1):
-    #             # Source rows have s_warehouse set.
-    #             if not row.get("s_warehouse"):
-    #                 continue
-    #             if not row.get("custom_purchase_order") or not row.get("custom_purchase_order_item"):
-    #                 frappe.throw(
-    #                     _("Row #{0}: link a Purchase Order and PO line on the "
-    #                       "source row for accurate variance.").format(idx),
-    #                     title=_("Purchase Order missing on source row"),
-    #                 )
+    # VAL-10 — REMOVED (ABP2-I782 req #2, 2026-10-05). Used to require a PO
+    # link on every source row before submit; already commented out
+    # upstream (6361cc6, "without this purchase order i should allow to
+    # submit") rather than deleted. Removed outright here instead of
+    # leaving dead commented code — same end state. The ticket hides the
+    # PO fields on Stock Entry (Property Setters in abp2_i782_fixlist.py)
+    # and explicitly asks to "remove any validation or script that
+    # requires them. Rate should fall back to Standard Rate." —
+    # get_operation_rm_rows already always sources basic_rate from
+    # standard_rate (never the PO), so there is nothing left for this
+    # check to protect.
 
     # VAL-13 — over-production warning (cumulative produced > planned).
     # Read total_produced from the matching Table 1 row; soft warning only.
