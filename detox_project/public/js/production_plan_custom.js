@@ -417,8 +417,38 @@ const _MAT_FIELDS = [
      options: "Item", reqd: 1, in_list_view: true},
     {fieldname: "item_type", label: __("Item Type"), fieldtype: "Select",
      options: "Raw Material\nService", reqd: 1, in_list_view: true},
+    // ABP2-I782 walkthrough fix (2026-10-06) — `fetch_from` REMOVED here.
+    // Root-caused via frappe source (not reproducible in-browser this
+    // session, so traced through the actual core files instead of
+    // guessing): a bare `frappe.ui.Dialog` has no `frm`, so Link controls'
+    // `get fetch_map()` (frappe/public/js/frappe/form/controls/link.js)
+    // falls into `fetch_map_for_quick_entry()`, which scans EVERY field in
+    // the dialog for `read_only + fetch_from` and registers it — exactly
+    // what this field declared. That makes item_code's own fetch_map
+    // non-empty, so every item_code selection fires a server round-trip
+    // (validate_link_and_fetch) whose `.then()` calls
+    // `update_dependant_fields()` -> `layout_set_value(target_field,
+    // field_value)` (link.js ~line 913) — a BARE function call that drops
+    // `this`, so when it reaches `FieldGroup.prototype.set_value` (frappe/
+    // public/js/frappe/ui/field_group.js:200) and that does
+    // `this.fields_dict[key]`, `this` is undefined -> "Cannot read
+    // properties of undefined (reading 'fields_dict')". This is a Frappe
+    // CORE bug (missing .call(this.layout, ...) / bind), confirmed
+    // pre-existing: this exact `fetch_from` was already on
+    // upstream/develop before ABP2-I782 touched this file (Phase 7d
+    // origin), and it reproduces on ANY Link field in this dialog
+    // (reported by the walkthrough on item_code and budget_category too,
+    // neither of which this ticket added). `fetch_from` never actually
+    // worked here anyway (Dialog fields don't honour it — see the
+    // item_code onchange below, which has always done this fetch
+    // explicitly instead); removing the dead, non-functional declaration
+    // stops it from ever registering a fetch_map and eliminates the
+    // crash entirely, with no loss of behaviour. Flagged to the manager
+    // as a separate pre-existing Frappe-core finding, not fixed upstream
+    // (out of scope — would mean patching frappe/public/js/frappe/form/
+    // controls/link.js, a vendored core file).
     {fieldname: "standard_uom", label: __("Standard UOM"), fieldtype: "Link",
-     options: "UOM", read_only: 1, fetch_from: "item_code.stock_uom"},
+     options: "UOM", read_only: 1},
     {fieldname: "manual_uom", label: __("Manual UOM"), fieldtype: "Link",
      options: "UOM"},
     {fieldname: "standard_rate", label: __("Standard Rate"),
