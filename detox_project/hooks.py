@@ -130,13 +130,22 @@ doc_events = {
 			"detox_project.detox_project.overrides.cc_project_guard.validate_production_plan",
 			# CR-01 — planned_date >= posting_date (block), past-date warn.
 			"detox_project.detox_project.change_set.cr01_production_plan_date.validate_production_plan_dates",
+			# ABP2-I782 — Qty x rate = Amount (no FG-qty multiplication) +
+			# Manual UOM conversion-factor recompute, server-side safety net
+			# for the client script (covers CR-02 bulk-grid / API inserts).
+			"detox_project.detox_project.change_set.abp2_i782_fixlist.recompute_operation_amounts",
 		],
 		"on_submit": "detox_project.detox_project.overrides.cc_project_guard.cascade_pp_to_work_orders",
 		# Table 2 (custom_operations) is fully allow_on_submit, and Frappe
 		# skips `validate` on an update-after-submit — so re-apply the
-		# CC/Project row guard here. (Multiply By is derived client-side,
-		# same as on a draft.)
-		"before_update_after_submit": "detox_project.detox_project.overrides.cc_project_guard.validate_production_plan_operations_after_submit",
+		# CC/Project row guard AND the Amount recompute here (ABP2-I782 —
+		# "Multiply By" is gone, but Amount still needs recomputing after a
+		# post-submit Qty/Standard Rate/Manual UOM edit, same reasoning
+		# f927e62 used for the CC/Project guard).
+		"before_update_after_submit": [
+			"detox_project.detox_project.overrides.cc_project_guard.validate_production_plan_operations_after_submit",
+			"detox_project.detox_project.change_set.abp2_i782_fixlist.recompute_operation_amounts",
+		],
 		# CR-01 — post-submit date revision: role gate, reason mandatory, stamp + timeline, sync draft links.
 		"on_update_after_submit": "detox_project.detox_project.change_set.cr01_production_plan_date.on_update_after_submit_dates",
 	},
@@ -167,6 +176,15 @@ doc_events = {
 			"detox_project.detox_project.overrides.cc_project_guard.validate_stock_entry",
 			# ABP2-I419 Phase 3 — Mfg-flow validations + rollup.
 			"detox_project.detox_project.overrides.stock_entry_manufacture.validate_stock_entry_manufacture",
+			# ABP2-I782 — UOM-conversion safety net: re-asserts the native
+			# `conversion_factor` field on Items rows (NOT basic_rate — see
+			# abp2_i782_fixlist.py) whose `uom` was changed in the grid after
+			# the initial fetch, and converts Service Items
+			# (custom_service_items) rate/amount. Runs after the DB-only
+			# 'CS1 Service Item Reroute' Before-Validate script (so it also
+			# catches auto-rerouted rows). See abp2_i782_fixlist.py docstrings.
+			"detox_project.detox_project.change_set.abp2_i782_fixlist.recompute_item_conversion_factors",
+			"detox_project.detox_project.change_set.abp2_i782_fixlist.recompute_service_item_rates",
 			# CR-03 — downtime capture: reason reqd when downtime>0, time order, shift cap, net>=0.
 			"detox_project.detox_project.change_set.cr03_downtime.validate_downtime",
 			# CR-04 / CL-11 — default Manufacture source warehouse to the transfer WIP.

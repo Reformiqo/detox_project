@@ -47,7 +47,14 @@ class TestI466RepackNoPlan(IntegrationTestCase):
         # Must NOT throw — variance check is plan-gated now.
         validate_stock_entry_manufacture(doc)
 
-    def test_repack_with_plan_missing_po_still_throws(self):
+    def test_repack_with_plan_missing_po_no_longer_throws(self):
+        """ABP2-I782 (2026-10-05) superseded this: the VAL-10 check this
+        test used to pin was removed entirely (ticket req #2 — the PO
+        fields are hidden from the user now, so a validation requiring
+        them would block every submit). upstream/develop (6361cc6)
+        already commented this block out; ABP2-I782 deletes it outright.
+        Renamed from test_repack_with_plan_missing_po_still_throws, which
+        asserted the now-removed behaviour."""
         from detox_project.detox_project.overrides.stock_entry_manufacture import (
             validate_stock_entry_manufacture,
         )
@@ -58,9 +65,7 @@ class TestI466RepackNoPlan(IntegrationTestCase):
                     "custom_purchase_order": None,
                     "custom_purchase_order_item": None}],
         )
-        with self.assertRaises(frappe.ValidationError) as ctx:
-            validate_stock_entry_manufacture(doc)
-        self.assertIn("Purchase Order", str(ctx.exception))
+        validate_stock_entry_manufacture(doc)  # must NOT throw (ABP2-I782)
 
     def test_manufacture_without_plan_submit_passes(self):
         """A standalone Manufacture SE (no plan) should also skip the
