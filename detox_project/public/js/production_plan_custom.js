@@ -429,6 +429,14 @@ const _MAT_FIELDS = [
      default: 1, in_list_view: true},
     {fieldname: "amount", label: __("Amount"), fieldtype: "Currency",
      read_only: 1, in_list_view: true},
+    // ABP2-I782 walkthrough fix — Conversion Factor was computed and saved
+    // correctly but had no UI surface anywhere on this dialog/table (full-
+    // text search found 0 matches). Read-only, precision 6 since the
+    // value is typically a fraction (e.g. 1/30 = 0.033333 for Month->Day
+    // — "how many Standard UOM per 1 Manual UOM", get_item_uom_factor's
+    // own convention; NOT literally "30").
+    {fieldname: "conversion_factor", label: __("Conversion Factor"),
+     fieldtype: "Float", precision: 6, read_only: 1, in_list_view: true},
     {fieldname: "qty_per_unit", label: __("Qty per Unit (reference only)"),
      fieldtype: "Float"},
     {fieldname: "operation_seq", label: __("Operation Seq"), fieldtype: "Int"},
@@ -570,6 +578,15 @@ function _render_rows_table(rows, opName) {
         return v.toLocaleString(undefined, {maximumFractionDigits: 2});
     };
     const fmtCheck = (v) => v ? __("Yes") : __("No");
+    // ABP2-I782 walkthrough fix — Conversion Factor is typically a small
+    // fraction (e.g. 1/30 = 0.033333 for Month->Day), not a whole number
+    // like Multiply By used to be — formatNum's 2-decimal rounding would
+    // display it as "0.03", losing the precision that makes the value
+    // legible. 6 decimals, em-dash when unset (same UOM, no conversion).
+    const formatConvFactor = (n) => {
+        const v = parseFloat(n || 0);
+        return v ? v.toLocaleString(undefined, {maximumFractionDigits: 6}) : "—";
+    };
 
     const trs = rows.map(r => `
         <tr>
@@ -578,6 +595,7 @@ function _render_rows_table(rows, opName) {
             <td>${r.budget_category ? escape(r.budget_category) : "<em>—</em>"}</td>
             <td>${escape(r.standard_uom || r.manual_uom)}</td>
             <td class='text-right'>${formatNum(r.standard_rate)}</td>
+            <td class='text-right'>${formatConvFactor(r.conversion_factor)}</td>
             <td class='text-right'>${formatNum(r.qty)}</td>
             <td class='text-right'>${formatNum(r.amount)}</td>
             <td>${fmtCheck(r.is_subcontracted)}</td>
@@ -602,6 +620,7 @@ function _render_rows_table(rows, opName) {
                     <th>${__("Budget Category")}</th>
                     <th>${__("UOM")}</th>
                     <th class='text-right'>${__("Std Rate")}</th>
+                    <th class='text-right'>${__("Conv. Factor")}</th>
                     <th class='text-right'>${__("Qty")}</th>
                     <th class='text-right'>${__("Amount")}</th>
                     <th>${__("Subc.")}</th>
@@ -631,7 +650,8 @@ function _open_material_dialog(frm, opName, existing_row) {
             row.operation_name = opName;
             _MAT_FIELDS.forEach(f => {
                 if (!f.fieldname || f.fieldtype === "Section Break"
-                    || f.fieldtype === "Column Break" || f.fieldname === "amount") return;
+                    || f.fieldtype === "Column Break"
+                    || f.fieldname === "amount" || f.fieldname === "conversion_factor") return;
                 row[f.fieldname] = values[f.fieldname];
             });
             if (!row.qty) row.qty = 1;  // ABP2-I782 — "each row stands alone", default 1
@@ -673,6 +693,7 @@ function _open_material_dialog(frm, opName, existing_row) {
             d._last_uom = uom;
             const std_uom = d.get_value("standard_uom");
             if (uom === std_uom) {
+                d.set_value("conversion_factor", 0);
                 d.set_value("amount", flt(d.get_value("qty") || 1) * flt(d.get_value("standard_rate")));
                 return;
             }
@@ -680,14 +701,32 @@ function _open_material_dialog(frm, opName, existing_row) {
                 method: "detox_project.detox_project.change_set.abp2_i782_fixlist.get_uom_factor_api",
                 args: {item_code: item_code, uom: uom},
             }).then(r => {
+                // Stale-response guard: the user may have changed Manual
+                // UOM again (or closed the dialog) before this resolved —
+                // don't stomp a newer value with an old async response.
+                if (!d.fields_dict.manual_uom || d.get_value("manual_uom") !== uom) return;
                 const factor = r && r.message;
                 if (!factor) {
-                    frappe.throw(__("No UOM conversion found for {0} on Item {1} (checked the Item's own UOMs and the global UOM Conversion Factor master). Add one in the Item's UOM table, or in UOM Conversion Factor.",
-                                    [uom, item_code]));
+                    // frappe.throw() expects a synchronous validate-style
+                    // call stack to attach its error dialog to; calling it
+                    // from inside a resolved Promise has no such stack, so
+                    // it only produces a silent unhandled-rejection in the
+                    // console instead of the intended user-facing message.
+                    // frappe.msgprint is the correct call from an async
+                    // context — it does not depend on being inside a
+                    // try/catch frappe itself controls.
+                    frappe.msgprint({
+                        title: __("No UOM conversion found"),
+                        message: __("No UOM conversion found for {0} on Item {1} (checked the Item's own UOMs and the global UOM Conversion Factor master). Add one in the Item's UOM table, or in UOM Conversion Factor.",
+                                    [uom, item_code]),
+                        indicator: "red",
+                    });
+                    d.set_value("conversion_factor", 0);
                     return;
                 }
                 const qty = flt(d.get_value("qty")) || 1;
                 const rate = flt(d.get_value("standard_rate")) * factor;
+                d.set_value("conversion_factor", factor);
                 d.set_value("amount", flt(qty * rate));
             });
         };
@@ -695,11 +734,18 @@ function _open_material_dialog(frm, opName, existing_row) {
 
     // Item Code → fetch Item.stock_uom into Standard UOM. Dialog fields
     // don't honour the docfield-level `fetch_from`; do it explicitly.
+    // Pre-existing async pattern (not changed by ABP2-I782's logic), but
+    // hardened with the same stale-response guard as manual_uom above
+    // while investigating the walkthrough's "reading 'fields_dict'"
+    // console error — both handlers do an async frappe call then touch
+    // `d` afterwards, so both get the guard rather than guessing which
+    // one is the actual source.
     if (d.fields_dict.item_code) {
         d.fields_dict.item_code.df.onchange = () => {
             const code = d.get_value("item_code");
             if (!code) return;
             frappe.db.get_value("Item", code, "stock_uom").then(r => {
+                if (!d.fields_dict.item_code || d.get_value("item_code") !== code) return;
                 const uom = r && r.message && r.message.stock_uom;
                 if (uom) d.set_value("standard_uom", uom);
             });

@@ -190,8 +190,16 @@ function _lock_source_row_fields(frm) {
     const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
     if (!grid || !grid.grid_rows) return;
     const LOCKED = ["item_code", "uom", "basic_rate", "expense_account"];
+    // ABP2-I782 walkthrough: a "Cannot read properties of undefined
+    // (reading 'forEach')" console error was seen once on a row delete
+    // (not reproducible 3/3 like the dialog issue, and no array-iteration
+    // code added by this ticket runs on row delete — most likely a core
+    // Frappe grid-refresh timing quirk between the row-removal splice and
+    // this frm-level `refresh` handler, not something this ticket's code
+    // controls). Defensive `gr &&` guard added regardless, in case
+    // `grid_rows` is read mid-splice with a hole in the array.
     grid.grid_rows.forEach((gr) => {
-        const row = gr.doc;
+        const row = gr && gr.doc;
         if (!row || !row.s_warehouse) return;
         LOCKED.forEach((fn) => {
             try { gr.toggle_editable(fn, false); } catch (e) { /* field absent */ }
