@@ -1,10 +1,23 @@
 frappe.ui.form.on("Sub WBS Element", {
 	refresh(frm) {
 		set_sub_wbs_category_filter(frm);
-		if (frm.doc.budget_amount) {
-			let pct = frm.doc.budget_utilization_pct || 0;
-			let color = pct > 100 ? "red" : pct > 80 ? "orange" : "green";
-			frm.dashboard.add_indicator(__("Utilization: {0}%", [pct.toFixed(1)]), color);
+		let stats = frm.doc.__onload && frm.doc.__onload.budget_stats;
+		if (frm.doc.budget_amount && stats) {
+			let pct = stats.utilization;
+			let color = pct >= 100 ? "red" : pct > 80 ? "orange" : "green";
+			frm.dashboard.add_indicator(__("Budget Utilization: {0}%", [pct.toFixed(2)]), color);
+			// Non-breaking spaces so each stat stays on one line.
+			const add_stat = (label, value, color) =>
+				frm.dashboard.add_indicator(
+					`${label}: ${format_currency(value)}`.replaceAll(" ", "\u00a0"),
+					color
+				);
+			add_stat(__("Budget"), frm.doc.budget_amount, "blue");
+			add_stat(__("Actual"), stats.actual, "blue");
+			add_stat(__("Commitment"), stats.commitment, "blue");
+			add_stat(__("RemOrdPlan"), stats.rem_ord_plan, "blue");
+			add_stat(__("Assigned"), stats.assigned, color);
+			add_stat(__("Available"), stats.available, "blue");
 		}
 
 		// ABP2-I416 — surface the inherited closure status. Sub WBS

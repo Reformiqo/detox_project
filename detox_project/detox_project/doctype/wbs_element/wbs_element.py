@@ -1,7 +1,13 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt
+
+from detox_project.detox_project.report.project_budget_hierarchy_tracker.project_budget_hierarchy_tracker import (
+	_compute_actual,
+	_compute_commitment,
+	_compute_rem_ord_plan,
+	_derive,
+)
 
 
 class WBSElement(Document):
@@ -133,62 +139,26 @@ class WBSElement(Document):
 				update_modified=False,
 			)
 
+	def onload(self):
+		self.set_onload("budget_stats", self.get_budget_stats())
+
+	def get_budget_stats(self):
+		"""Same calculation as the Project Budget Hierarchy Tracker (before GST)."""
+		actual = _compute_actual(self.project, self.cost_center, self.name)
+		commitment = _compute_commitment(self.name)
+		rem_ord_plan = _compute_rem_ord_plan(self.name)
+		assigned, available, utilization = _derive(self.budget_amount, actual, commitment, rem_ord_plan)
+		return {
+			"actual": actual,
+			"commitment": commitment,
+			"rem_ord_plan": rem_ord_plan,
+			"assigned": assigned,
+			"available": available,
+			"utilization": utilization,
+		}
+
 	def refresh_spent_amounts(self):
-		"""ABP2-I439 (Sahil 2026-06-10): recalculate spent as committed
-		POs + booked PIs, de-double-counted.
-
-		Before the fix this summed Purchase Orders only — direct PIs
-		(no parent PO) never moved the needle, and after ABP2-I455's
-		dedup heal the stale budget_spent values still carried the old
-		over-counted totals.
-
-		Formula now:
-		    spent = Σ submitted PO.allocated_amount
-		          + Σ submitted PI.allocated_amount
-		            WHERE the PI's items don't reference any PO already
-		            allocated to this WBS  (de-double-count)
-		"""
-		from frappe.utils import flt
-
-		po_spent = flt(frappe.db.sql(
-			"""
-			SELECT COALESCE(SUM(wa.allocated_amount), 0)
-			FROM `tabWBS Allocation` wa
-			INNER JOIN `tabPurchase Order` po ON po.name = wa.parent
-			WHERE wa.parenttype = 'Purchase Order'
-			  AND wa.wbs_element = %s
-			  AND po.docstatus = 1
-			""",
-			self.name,
-		)[0][0])
-
-		# PI sum — exclude PIs converted from a PO that's already in
-		# this WBS (the PO already counted that money). NOT EXISTS
-		# subquery short-circuits on the first matching PII row.
-		pi_spent = flt(frappe.db.sql(
-			"""
-			SELECT COALESCE(SUM(wa.allocated_amount), 0)
-			FROM `tabWBS Allocation` wa
-			INNER JOIN `tabPurchase Invoice` pi ON pi.name = wa.parent
-			WHERE wa.parenttype = 'Purchase Invoice'
-			  AND wa.wbs_element = %s
-			  AND pi.docstatus = 1
-			  AND NOT EXISTS (
-			      SELECT 1
-			      FROM `tabPurchase Invoice Item` pii
-			      INNER JOIN `tabWBS Allocation` po_wa
-			              ON po_wa.parent = pii.purchase_order
-			             AND po_wa.parenttype = 'Purchase Order'
-			             AND po_wa.wbs_element = %s
-			      WHERE pii.parent = pi.name
-			        AND pii.purchase_order IS NOT NULL
-			        AND pii.purchase_order != ''
-			  )
-			""",
-			(self.name, self.name),
-		)[0][0])
-
-		self.budget_spent = po_spent + pi_spent
+		self.budget_spent = self.get_budget_stats()["assigned"]
 		self.calculate_totals()
 		self.save(ignore_permissions=True)
 		self.update_project_budget_summary()

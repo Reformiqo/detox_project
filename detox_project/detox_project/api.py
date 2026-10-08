@@ -152,22 +152,43 @@ def dedupe_wbs_allocations(doc, method=None):
 
 
 def validate_material_request_budget(doc, method):
-	"""Soft warning per WBS allocation row if budget nearing limit."""
+	"""Block the MR if it takes its WBS / Sub WBS Element to 100% utilization or more."""
 	# ABP2-I457 reopen — kill float drift on allocated_amount BEFORE the
 	# AOS check fires (must run inside validate(), which precedes
 	# validate_update_after_submit in Frappe's _save() ordering).
 	_round_allocated_amounts(doc)
 	dedupe_wbs_allocations(doc)
-	if not doc.get("custom_wbs_allocations"):
-		return
 
-	for row in doc.custom_wbs_allocations:
+	for row in doc.get("custom_wbs_allocations") or []:
 		if not row.wbs_element:
 			continue
-		_validate_single_wbs_budget(
-			doc, row.wbs_element, flt(row.allocated_amount),
-			warn_only=True, row_label=row.wbs_element,
-		)
+
+		if row.sub_wbs_element:
+			target = frappe.get_doc("Sub WBS Element", row.sub_wbs_element)
+			label = f"{target.sub_wbs_name} ({target.name})"
+		else:
+			target = frappe.get_doc("WBS Element", row.wbs_element)
+			label = f"{target.wbs_name} ({target.name})"
+
+		budget = flt(target.budget_amount)
+		if not budget:
+			continue
+
+		assigned = target.get_budget_stats()["assigned"] + flt(row.allocated_amount)
+		utilization = assigned / budget * 100
+		if utilization >= 100:
+			frappe.throw(
+				_(
+					"Budget exceeded for {0}. Budget: {1} | Assigned: {2} | Utilization: {3}%. "
+					"Material Request cannot be created."
+				).format(
+					label,
+					frappe.format_value(budget, {"fieldtype": "Currency"}),
+					frappe.format_value(assigned, {"fieldtype": "Currency"}),
+					f"{utilization:.2f}",
+				),
+				title=_("Budget Exceeded"),
+			)
 
 
 def validate_po_budget(doc, method):
