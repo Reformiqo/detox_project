@@ -160,8 +160,54 @@
    "label": "Remarks"
   }
  ],
- "links": [],
- "modified": "2026-03-16 12:58:10.560228",
+ "links": [
+  {
+   "group": "Purchase",
+   "link_doctype": "Material Request",
+   "link_fieldname": "sub_wbs_element"
+  },
+  {
+   "group": "Purchase",
+   "link_doctype": "Purchase Order",
+   "link_fieldname": "sub_wbs_element"
+  },
+  {
+   "group": "Purchase",
+   "link_doctype": "Purchase Receipt",
+   "link_fieldname": "sub_wbs_element"
+  },
+  {
+   "group": "Purchase",
+   "link_doctype": "Purchase Invoice",
+   "link_fieldname": "sub_wbs_element"
+  },
+  {
+   "group": "Sales",
+   "link_doctype": "Blanket Order",
+   "link_fieldname": "sub_wbs_element"
+  },
+  {
+   "group": "Sales",
+   "link_doctype": "Sales Order",
+   "link_fieldname": "sub_wbs_element"
+  },
+  {
+   "group": "Sales",
+   "link_doctype": "Delivery Note",
+   "link_fieldname": "sub_wbs_element"
+  },
+  {
+   "group": "Sales",
+   "link_doctype": "Sales Invoice",
+   "link_fieldname": "sub_wbs_element"
+  },
+  {
+   "group": "Sub WBS",
+   "link_doctype": "Sub WBS Element",
+   "link_fieldname": "parent_sub_wbs"
+  }
+ ],
+ "modified": "2026-10-09 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Detox Project",
  "name": "Sub WBS Element",

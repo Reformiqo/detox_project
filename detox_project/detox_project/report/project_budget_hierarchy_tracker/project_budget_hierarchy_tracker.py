@@ -12,7 +12,7 @@ Definitions (from FRD "Field Logic" tab):
                    cost_center = WBS.cost_center.
   • Commitment   = Σ over POs linked to this WBS, of
                    (allocated_amount × open_fraction)
-                   where open_fraction = max(0, (PO total − Σ billed_amt) / PO total)
+                   where open_fraction = max(0, (PO total excl. GST − Σ billed_amt) / PO total excl. GST)
                    and PO is docstatus=1, status NOT in
                    (Completed, Closed, Cancelled, Delivered).
   • RemOrdPlan   = Σ over MRs linked to this WBS, same shape with
@@ -116,18 +116,17 @@ def _compute_actual(project, cost_center, wbs_element=None, sub_wbs_element=None
         return flt(row[0][0]) if row else 0.0
 
     # --- PO billed portion (mirrors Commitment's open-portion pattern) ---
+    # WBS row (no sub) matches all its allocations, so it rolls up its Sub WBS.
     where_wbs = "wa.wbs_element = %s"
     args = [wbs_element]
     if sub_wbs_element:
         where_wbs += " AND wa.sub_wbs_element = %s"
         args.append(sub_wbs_element)
-    else:
-        where_wbs += " AND (wa.sub_wbs_element IS NULL OR wa.sub_wbs_element = '')"
 
     po_rows = frappe.db.sql(
         f"""
         SELECT po.name,
-               po.grand_total,
+               po.total,
                COALESCE((
                    SELECT SUM(poi.billed_amt)
                    FROM `tabPurchase Order Item` poi
@@ -146,7 +145,7 @@ def _compute_actual(project, cost_center, wbs_element=None, sub_wbs_element=None
     )
     total = 0.0
     for r in po_rows:
-        po_total = flt(r.grand_total)
+        po_total = flt(r.total)
         billed = flt(r.billed)
         if po_total <= 0:
             continue
@@ -193,15 +192,11 @@ def _compute_commitment(wbs_element, sub_wbs_element=None):
     if sub_wbs_element:
         where_wbs += " AND wa.sub_wbs_element = %s"
         args.append(sub_wbs_element)
-    else:
-        # Header-level WBS row (no sub) — match only the
-        # parent-WBS allocations, not the per-Sub ones.
-        where_wbs += " AND (wa.sub_wbs_element IS NULL OR wa.sub_wbs_element = '')"
 
     rows = frappe.db.sql(
         f"""
         SELECT po.name,
-               po.grand_total,
+               po.total,
                COALESCE((
                    SELECT SUM(poi.billed_amt)
                    FROM `tabPurchase Order Item` poi
@@ -221,7 +216,7 @@ def _compute_commitment(wbs_element, sub_wbs_element=None):
     )
     total = 0.0
     for r in rows:
-        po_total = flt(r.grand_total)
+        po_total = flt(r.total)
         billed = flt(r.billed)
         if po_total <= 0:
             continue
@@ -242,8 +237,6 @@ def _compute_rem_ord_plan(wbs_element, sub_wbs_element=None):
     if sub_wbs_element:
         where_wbs += " AND wa.sub_wbs_element = %s"
         args.append(sub_wbs_element)
-    else:
-        where_wbs += " AND (wa.sub_wbs_element IS NULL OR wa.sub_wbs_element = '')"
 
     rows = frappe.db.sql(
         f"""
