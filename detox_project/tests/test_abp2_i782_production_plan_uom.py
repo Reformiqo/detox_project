@@ -761,3 +761,82 @@ class TestABP2I782BudgetDependsOnEvalSafe(IntegrationTestCase):
 		self.assertEqual(labels["custom_budget_end_date"], "OPEX End Date")
 		self.assertEqual(labels["custom_capex_start_date"], "CAPEX Start Date")
 		self.assertEqual(labels["custom_capex_end_date"], "CAPEX End Date")
+
+
+class TestABP2I782BudgetDirtyGuard(IntegrationTestCase):
+	"""Coordinator regression (13-10-2026, Round 2 follow-up) — opening an
+	EXISTING, already-submitted Production Plan flipped it to "Not Saved"
+	purely from viewing it, with nothing edited. Confirmed on this bench
+	against the exact doc named in the report:
+	MFG-PP-2026-00001 -> project='PROJ-0024', custom_project=None,
+	custom_no_bom=0 (BOM-based), docstatus=1.
+
+	Root-caused by reading the actual trigger chain, not by guessing:
+	`_fetch_project_budget` wrote all 6 budget-display fields
+	unconditionally every time it ran (same footgun class as the JE save
+	dirty-loop fix — project memory: "equality-guard set_value; no
+	trailing refresh_field"). Fixed via the new _set_budget_field_if_changed
+	helper.
+
+	IMPORTANT — this does NOT fully explain MFG-PP-2026-00001's own
+	reported symptom. Tracing _sync_project_into_proxy (pre-existing,
+	Phase 1, unrelated to this ticket) against that doc's actual data
+	(project set, custom_project blank) shows it takes the
+	project-into-custom_project branch, which triggers the
+	`custom_project` field handler — NOT the `project` field handler that
+	calls _fetch_project_budget. So for THIS specific doc, the dirty flag
+	is coming from _sync_project_into_proxy's own frm.set_value, not from
+	anything in this file that Round 2 touches. _sync_project_into_proxy
+	runs for BOM and No-BOM plans alike with no custom_no_bom gate, and
+	the ticket's own global rule ("BOM-based Production Plans... must
+	NEVER be touched by any of this") blocks fixing it here without
+	explicit sign-off — flagged to the coordinator, not fixed in this
+	commit.
+
+	No browser tool is available in this environment (confirmed to the
+	coordinator separately), so this is a static-analysis test over the
+	shipped JS source rather than a literal frm.is_dirty() assertion —
+	it pins the specific guard shape (equality-guarded helper, no bare
+	set_value, no trailing refresh) that a browser walkthrough would
+	otherwise have to verify by hand."""
+
+	def _source(self):
+		path = frappe.get_app_path("detox_project", "public", "js", "production_plan_custom.js")
+		with open(path) as f:
+			return f.read()
+
+	def _fetch_project_budget_body(self, src):
+		start = src.index("function _fetch_project_budget(frm)")
+		end = src.index("\nfunction _set_budget_field_if_changed")
+		return src[start:end]
+
+	def test_set_budget_field_if_changed_helper_exists_and_guards(self):
+		src = self._source()
+		self.assertIn(
+			"function _set_budget_field_if_changed(frm, fieldname, value)", src)
+		helper = src.split(
+			"function _set_budget_field_if_changed(frm, fieldname, value)", 1)[1]
+		helper_body = helper[: helper.index("\n}\n") + 2]
+		self.assertIn("!==", helper_body, "helper must compare before writing")
+		self.assertIn("frm.set_value(fieldname", helper_body)
+
+	def test_fetch_project_budget_never_calls_set_value_directly(self):
+		"""Every write of the 6 budget-display fields must go through the
+		equality-guarded helper — a bare frm.set_value here would bypass
+		the guard entirely."""
+		body = self._fetch_project_budget_body(self._source())
+		self.assertNotIn(
+			"frm.set_value(", body,
+			"_fetch_project_budget must only write through "
+			"_set_budget_field_if_changed, never frm.set_value directly.")
+		self.assertEqual(
+			body.count("_set_budget_field_if_changed("), 12,
+			"expected 6 fields x 2 call sites (blank-project branch + "
+			"frappe.call callback) = 12 calls.")
+
+	def test_no_trailing_refresh_after_the_writes(self):
+		"""Same second rule as the JE save dirty-loop fix: no
+		refresh_field / full frm.refresh() after the guarded writes."""
+		body = self._fetch_project_budget_body(self._source())
+		self.assertNotIn("refresh_field(", body)
+		self.assertNotIn("frm.refresh(", body)

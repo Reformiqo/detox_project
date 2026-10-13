@@ -101,15 +101,25 @@ frappe.ui.form.on("Production Plan", {
 // custom_budget_type only, never on whether a value is populated) —
 // Frappe re-evaluates depends_on for the whole form on every set_value,
 // so no extra refresh call is needed here.
+//
+// Round 2 FOLLOW-UP (13-10-2026, coordinator regression) — "unconditionally"
+// above was the bug: every one of these 6 writes called frm.set_value even
+// when the fetched/cleared value already matched what was already on the
+// doc, which marks the form dirty regardless. Exact same footgun class as
+// the JE save dirty-loop fix (project memory: "equality-guard set_value;
+// no trailing refresh_field"). _set_budget_field_if_changed below is now
+// the ONLY way this function may write any of the 6 fields — enforced by
+// test_fetch_project_budget_never_calls_set_value_directly, which scans
+// this function's own source for a bare frm.set_value call.
 function _fetch_project_budget(frm) {
     if (!frm.fields_dict.custom_project_budget) return;  // CF not migrated yet
     if (!frm.doc.project) {
-        frm.set_value("custom_project_budget", "");
-        frm.set_value("custom_budget_type", "");
-        frm.set_value("custom_budget_start_date", "");
-        frm.set_value("custom_budget_end_date", "");
-        frm.set_value("custom_capex_start_date", "");
-        frm.set_value("custom_capex_end_date", "");
+        _set_budget_field_if_changed(frm, "custom_project_budget", "");
+        _set_budget_field_if_changed(frm, "custom_budget_type", "");
+        _set_budget_field_if_changed(frm, "custom_budget_start_date", "");
+        _set_budget_field_if_changed(frm, "custom_budget_end_date", "");
+        _set_budget_field_if_changed(frm, "custom_capex_start_date", "");
+        _set_budget_field_if_changed(frm, "custom_capex_end_date", "");
         return;
     }
     frappe.call({
@@ -117,14 +127,28 @@ function _fetch_project_budget(frm) {
         args: {project: frm.doc.project},
         callback(r) {
             const d = (r && r.message) || {};
-            frm.set_value("custom_project_budget", d.project_budget || "");
-            frm.set_value("custom_budget_type", d.budget_type || "");
-            frm.set_value("custom_budget_start_date", d.opex_start_date || "");
-            frm.set_value("custom_budget_end_date", d.opex_end_date || "");
-            frm.set_value("custom_capex_start_date", d.capex_start_date || "");
-            frm.set_value("custom_capex_end_date", d.capex_end_date || "");
+            _set_budget_field_if_changed(frm, "custom_project_budget", d.project_budget || "");
+            _set_budget_field_if_changed(frm, "custom_budget_type", d.budget_type || "");
+            _set_budget_field_if_changed(frm, "custom_budget_start_date", d.opex_start_date || "");
+            _set_budget_field_if_changed(frm, "custom_budget_end_date", d.opex_end_date || "");
+            _set_budget_field_if_changed(frm, "custom_capex_start_date", d.capex_start_date || "");
+            _set_budget_field_if_changed(frm, "custom_capex_end_date", d.capex_end_date || "");
         },
     });
+}
+
+// Round 2 follow-up (13-10-2026) — equality-guarded write for the 6
+// budget-display fields: only calls frm.set_value when the new value
+// actually differs from what's already on the doc, and never follows it
+// with refresh_field / a full-form refresh (both rules from the JE save
+// dirty-loop fix). Treats "" and falsy (null/undefined) as the same blank
+// value so clearing an already-blank field is also a no-op.
+function _set_budget_field_if_changed(frm, fieldname, value) {
+    const current = frm.doc[fieldname] || "";
+    const next = value || "";
+    if (current !== next) {
+        frm.set_value(fieldname, next);
+    }
 }
 
 function _sync_project_into_proxy(frm) {
