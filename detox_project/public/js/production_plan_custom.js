@@ -89,6 +89,18 @@ frappe.ui.form.on("Production Plan", {
 // NOT the same thing as 9f14c2d's "Budget Category" (budget_category on
 // Table 2 rows, Project Cost Category) — this is a header-level display
 // of the Financial Model itself.
+//
+// ABP2-I782 Round 2 Task 1 (12-10-2026) — both OPEX and CAPEX pairs are
+// now set from the server response every time (never only the one that
+// applies): get_approved_financial_model already blanks whichever pair
+// doesn't match the model's own Budget Type, so setting all 4 fields
+// unconditionally from `d` both fills the applicable pair AND clears the
+// other one on every Project change, per the ticket's own "clear the
+// other pair when Project or Budget Type changes" instruction. Visibility
+// itself is handled separately by each field's `depends_on` (keyed on
+// custom_budget_type only, never on whether a value is populated) —
+// Frappe re-evaluates depends_on for the whole form on every set_value,
+// so no extra refresh call is needed here.
 function _fetch_project_budget(frm) {
     if (!frm.fields_dict.custom_project_budget) return;  // CF not migrated yet
     if (!frm.doc.project) {
@@ -96,6 +108,8 @@ function _fetch_project_budget(frm) {
         frm.set_value("custom_budget_type", "");
         frm.set_value("custom_budget_start_date", "");
         frm.set_value("custom_budget_end_date", "");
+        frm.set_value("custom_capex_start_date", "");
+        frm.set_value("custom_capex_end_date", "");
         return;
     }
     frappe.call({
@@ -105,8 +119,10 @@ function _fetch_project_budget(frm) {
             const d = (r && r.message) || {};
             frm.set_value("custom_project_budget", d.project_budget || "");
             frm.set_value("custom_budget_type", d.budget_type || "");
-            frm.set_value("custom_budget_start_date", d.budget_start_date || "");
-            frm.set_value("custom_budget_end_date", d.budget_end_date || "");
+            frm.set_value("custom_budget_start_date", d.opex_start_date || "");
+            frm.set_value("custom_budget_end_date", d.opex_end_date || "");
+            frm.set_value("custom_capex_start_date", d.capex_start_date || "");
+            frm.set_value("custom_capex_end_date", d.capex_end_date || "");
         },
     });
 }

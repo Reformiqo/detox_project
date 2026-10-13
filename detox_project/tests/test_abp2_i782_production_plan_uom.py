@@ -355,17 +355,31 @@ class TestABP2I782PoFieldsHidden(IntegrationTestCase):
 				f"Landed Cost Taxes and Charges-{fn}-hidden", "value")
 			self.assertEqual(ps, "1", f"Landed Cost Taxes and Charges.{fn} must be hidden")
 
-	def test_service_item_purchase_order_stays_visible(self):
-		"""Manager's call (2026-10-05): 'Service Purchase Order' on Detox
-		Stock Entry Service Item is the mechanism that routes a service
-		item's spend to its own PO — deliberately NOT hidden, unlike the
-		other 3 locations."""
+	def test_service_item_purchase_order_now_hidden(self):
+		"""Round 2 Task 2 (12-10-2026) reverses Round 1's 2026-10-05 call:
+		the live-site review found 'Service Purchase Order' still visible
+		in the Service Items (Non Stock) grid and the client wants it
+		hidden there too, same as the other 3 PO locations. Hide only —
+		field + data stay (reqd is not set on it; see the doctype JSON)."""
 		meta = frappe.get_meta("Detox Stock Entry Service Item")
 		po_field = meta.get_field("purchase_order")
 		self.assertIsNotNone(po_field)
-		self.assertFalse(po_field.hidden, "purchase_order must stay visible per the manager's explicit call")
+		self.assertTrue(po_field.hidden, "purchase_order must now be hidden (Round 2 Task 2)")
+		self.assertFalse(po_field.reqd, "must not become mandatory — ticket only asks to hide it")
 		po_item_field = meta.get_field("purchase_order_item")
 		self.assertTrue(po_item_field.hidden, "purchase_order_item is hidden=1 on production already — must match")
+
+	def test_service_item_purchase_order_hidden_via_property_setter_not_delete(self):
+		"""Hidden via Property Setter (ticket rule: hide, never delete) —
+		field must still be a real, queryable column on the doctype."""
+		ps = frappe.db.get_value(
+			"Property Setter", "Detox Stock Entry Service Item-purchase_order-hidden", "value"
+		)
+		self.assertEqual(ps, "1")
+		self.assertTrue(
+			frappe.db.has_column("Detox Stock Entry Service Item", "purchase_order"),
+			"field must still exist in the DB — ticket says hide, not delete",
+		)
 
 	def test_no_custom_conversion_factor_duplicate_on_stock_entry_detail(self):
 		"""Reconciliation guard: a first draft of this fix added a
@@ -447,6 +461,25 @@ class TestABP2I782ServiceItemUomConversion(IntegrationTestCase):
 		row = doc.custom_service_items[0]
 		self.assertEqual(flt(row.rate), 850.0, "PO-sourced rate must not be touched")
 		self.assertEqual(flt(row.amount), 1700.0)
+
+	def test_no_po_no_rate_falls_back_to_plan_standard_rate(self):
+		"""Round 2 Task 2's explicit safety check: with 'Service Purchase
+		Order' now hidden, a row saved with no PO and no rate typed in
+		must still price off the Production Plan row's Standard Rate —
+		never zero."""
+		plan, op, labour_item = self._plan()
+		doc = frappe._dict({
+			"production_plan": plan.name,
+			"custom_process_selection": op,
+			"custom_service_items": [frappe._dict({
+				"item_code": labour_item, "qty": 3, "uom": "Month",
+				"rate": None, "amount": 0, "purchase_order": None,
+			})],
+		})
+		recompute_service_item_rates(doc)
+		row = doc.custom_service_items[0]
+		self.assertEqual(flt(row.rate), 27000.0, "must fall back to the plan's Standard Rate, not stay 0")
+		self.assertEqual(flt(row.amount), 81000.0)  # 3 x 27000
 
 	def test_no_production_plan_is_a_noop(self):
 		"""Standalone Service Items rows with no linked plan have no
@@ -560,8 +593,8 @@ class TestABP2I782ProjectBudget(IntegrationTestCase):
 		result = get_approved_financial_model(PROJECT)
 		self.assertEqual(result.get("project_budget"), fm.name)
 		self.assertEqual(result.get("budget_type"), "OPEX")
-		self.assertEqual(str(result.get("budget_start_date")), "2026-07-01")
-		self.assertEqual(str(result.get("budget_end_date")), "2027-03-31")
+		self.assertEqual(str(result.get("opex_start_date")), "2026-07-01")
+		self.assertEqual(str(result.get("opex_end_date")), "2027-03-31")
 
 	def test_no_approved_model_returns_empty(self):
 		# Draft (non-Approved) Financial Model must NOT be returned —
@@ -573,3 +606,158 @@ class TestABP2I782ProjectBudget(IntegrationTestCase):
 	def test_blank_project_returns_empty(self):
 		self.assertEqual(get_approved_financial_model(""), {})
 		self.assertEqual(get_approved_financial_model(None), {})
+
+	# ---- Round 2 Task 1 (12-10-2026) -----------------------------------
+	def test_opex_model_hides_capex_pair_even_when_capex_dates_are_filled(self):
+		"""Ticket's own worked example (FM-2026-00039, Vapi): budget_type
+		is 'OPEX' but the Financial Model ALSO has CAPEX dates filled in
+		(nothing in Financial Model.validate stops that — confirmed
+		against budgeting_tool's validate_dates/validate_submit_prerequisites,
+		which only range-checks each pair internally, never clears the
+		other one based on budget_type). The CAPEX pair must come back
+		None regardless — visibility/value must follow budget_type ONLY,
+		never "is a date present"."""
+		fm = self._make_fm(
+			budget_type="OPEX",
+			capex_start_date="2026-09-04",
+			capex_end_date="2027-03-31",
+		)
+		result = get_approved_financial_model(PROJECT)
+		self.assertEqual(result.get("project_budget"), fm.name)
+		self.assertEqual(result.get("budget_type"), "OPEX")
+		self.assertEqual(str(result.get("opex_start_date")), "2026-07-01")
+		self.assertEqual(str(result.get("opex_end_date")), "2027-03-31")
+		self.assertIsNone(result.get("capex_start_date"))
+		self.assertIsNone(result.get("capex_end_date"))
+
+	def test_capex_model_returns_capex_dates_only(self):
+		fm = self._make_fm(
+			budget_type="CAPEX",
+			capex_start_date="2026-09-04",
+			capex_end_date="2027-03-31",
+			opex_start_date=None,
+			opex_end_date=None,
+		)
+		result = get_approved_financial_model(PROJECT)
+		self.assertEqual(result.get("project_budget"), fm.name)
+		self.assertEqual(result.get("budget_type"), "CAPEX")
+		self.assertEqual(str(result.get("capex_start_date")), "2026-09-04")
+		self.assertEqual(str(result.get("capex_end_date")), "2027-03-31")
+		self.assertIsNone(result.get("opex_start_date"))
+		self.assertIsNone(result.get("opex_end_date"))
+
+	def test_both_model_returns_both_pairs(self):
+		"""Bhopal's own FM-2026-00033 shape: budget_type 'Both' must
+		surface BOTH pairs independently (Round 2's actual reported bug —
+		Round 1 only ever showed one)."""
+		fm = self._make_fm(
+			budget_type="Both",
+			opex_start_date="2026-05-01",
+			opex_end_date="2027-03-31",
+			capex_start_date="2026-09-04",
+			capex_end_date="2027-03-31",
+		)
+		result = get_approved_financial_model(PROJECT)
+		self.assertEqual(result.get("project_budget"), fm.name)
+		self.assertEqual(result.get("budget_type"), "Both")
+		self.assertEqual(str(result.get("opex_start_date")), "2026-05-01")
+		self.assertEqual(str(result.get("opex_end_date")), "2027-03-31")
+		self.assertEqual(str(result.get("capex_start_date")), "2026-09-04")
+		self.assertEqual(str(result.get("capex_end_date")), "2027-03-31")
+
+
+class TestABP2I782BudgetDependsOnEvalSafe(IntegrationTestCase):
+	"""ABP2-I782 Round 2 Task 1 — same guard class as
+	test_abp2_i372_pe_depends_on_eval_safe.py (feedback_depends_on_pure_js):
+	depends_on is evaluated client-side by frappe.utils.eval(expr, {doc,
+	parent}) — Frappe's own Python helpers (in_list/in_array/cint/flt) are
+	NOT in that scope and throw 'Invalid depends_on expression' on every
+	form refresh, which blocks save AND submit (ABP2-I372 was exactly
+	this, on Payment Entry). Production Plan had no such guard before;
+	this ticket is the first to add a non-trivial depends_on there."""
+
+	BUDGET_FIELDS = (
+		"custom_budget_start_date", "custom_budget_end_date",
+		"custom_capex_start_date", "custom_capex_end_date",
+	)
+	_PYTHON_HELPER_RE = __import__("re").compile(
+		r"\bin_list\s*\(|\bin_array\s*\(|\bcint\s*\(|\bflt\s*\("
+	)
+
+	def test_no_python_helpers_in_depends_on(self):
+		rows = frappe.db.sql(
+			"""SELECT fieldname, depends_on FROM `tabCustom Field`
+			   WHERE dt = 'Production Plan' AND fieldname IN %(fns)s""",
+			{"fns": self.BUDGET_FIELDS}, as_dict=True,
+		)
+		self.assertEqual(len(rows), 4, "all 4 budget date fields must exist")
+		offenders = [
+			f"{r.fieldname} = {r.depends_on!r}" for r in rows
+			if self._PYTHON_HELPER_RE.search(r.depends_on or "")
+		]
+		self.assertEqual(offenders, [], "\n".join(offenders))
+
+	def test_depends_on_keyed_only_on_budget_type_not_date_values(self):
+		"""Ticket's explicit instruction: visibility must never key off
+		whether a date is populated — only off custom_budget_type."""
+		rows = frappe.db.sql(
+			"""SELECT fieldname, depends_on FROM `tabCustom Field`
+			   WHERE dt = 'Production Plan' AND fieldname IN %(fns)s""",
+			{"fns": self.BUDGET_FIELDS}, as_dict=True,
+		)
+		by_fn = {r.fieldname: r.depends_on or "" for r in rows}
+		for fn in self.BUDGET_FIELDS:
+			expr = by_fn[fn]
+			self.assertIn("doc.custom_budget_type", expr, fn)
+			for date_fn in self.BUDGET_FIELDS:
+				self.assertNotIn(f"doc.{date_fn}", expr,
+					f"{fn}'s depends_on must not read {date_fn}'s own value")
+
+	def test_opex_vs_capex_fields_show_for_the_right_budget_types(self):
+		by_fn = {}
+		for fn in self.BUDGET_FIELDS:
+			by_fn[fn] = frappe.db.get_value("Custom Field",
+				{"dt": "Production Plan", "fieldname": fn}, "depends_on")
+
+		def visible(expr, budget_type):
+			# Pure-JS expr: doc.custom_budget_type=='X' || doc.custom_budget_type=='Y'
+			# Translate the handful of JS-only tokens the client eval
+			# understands (||, ==, single quotes work in both, doc.<x>)
+			# into Python so this can be checked without a JS runtime —
+			# same approach as test_eval_expression_compiles_in_pure_js
+			# in test_abp2_i372_pe_depends_on_eval_safe.py, extended from
+			# "parses" to "evaluates to the right boolean".
+			body = expr.removeprefix("eval:")
+			py = body.replace("||", " or ").replace("doc.custom_budget_type", "budget_type_value")
+			return eval(py, {"__builtins__": {}}, {"budget_type_value": budget_type})  # noqa: S307 — test-only, fixed input, no builtins
+
+		for budget_type, opex_shown, capex_shown in (
+			("OPEX", True, False), ("CAPEX", False, True), ("Both", True, True),
+		):
+			self.assertEqual(
+				visible(by_fn["custom_budget_start_date"], budget_type), opex_shown,
+				f"OPEX Start Date visibility wrong for budget_type={budget_type}")
+			self.assertEqual(
+				visible(by_fn["custom_budget_end_date"], budget_type), opex_shown,
+				f"OPEX End Date visibility wrong for budget_type={budget_type}")
+			self.assertEqual(
+				visible(by_fn["custom_capex_start_date"], budget_type), capex_shown,
+				f"CAPEX Start Date visibility wrong for budget_type={budget_type}")
+			self.assertEqual(
+				visible(by_fn["custom_capex_end_date"], budget_type), capex_shown,
+				f"CAPEX End Date visibility wrong for budget_type={budget_type}")
+
+	def test_labels_relabeled_without_renaming_fieldnames(self):
+		"""Fieldnames must be unchanged (old plan data intact); only the
+		labels move to OPEX-specific wording."""
+		labels = {
+			r.fieldname: r.label for r in frappe.db.sql(
+				"""SELECT fieldname, label FROM `tabCustom Field`
+				   WHERE dt = 'Production Plan' AND fieldname IN %(fns)s""",
+				{"fns": self.BUDGET_FIELDS}, as_dict=True,
+			)
+		}
+		self.assertEqual(labels["custom_budget_start_date"], "OPEX Start Date")
+		self.assertEqual(labels["custom_budget_end_date"], "OPEX End Date")
+		self.assertEqual(labels["custom_capex_start_date"], "CAPEX Start Date")
+		self.assertEqual(labels["custom_capex_end_date"], "CAPEX End Date")

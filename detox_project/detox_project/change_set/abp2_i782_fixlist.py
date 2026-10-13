@@ -11,6 +11,15 @@
 #   4. Show the Project's Approved Financial Model + budget dates on
 #      Production Plan (read-only, display only).
 #
+# ROUND 2 (live-site review, 12-10-2026) ADDITIONS in this file:
+#   Task 1 — req #4 above only ever showed ONE pair of dates even when
+#     Budget Type == "Both"; now shows independent OPEX + CAPEX pairs,
+#     gated on Budget Type alone (see _OPEX_DATES_DEPENDS_ON /
+#     _CAPEX_DATES_DEPENDS_ON and get_approved_financial_model).
+#   Task 2 — `Detox Stock Entry Service Item.purchase_order` is now
+#     hidden too (reverses the Round 1 call below in
+#     install_property_setters' own docstring).
+#
 # CODE-FIRST, same pattern as cr050607_stock_entry.py: every Custom Field,
 # Property Setter and master-data row here is upserted idempotently from
 # setup.py:after_migrate, so it survives an FC redeploy even though fixture
@@ -388,18 +397,52 @@ def recompute_service_item_rates(doc, method=None) -> None:
 # budgeting_tool/.../financial_model.py), so that query can surface
 # categories from a Draft (never-approved) Financial Model. Reported to
 # the manager; not touched here.
+#
+# ABP2-I782 ROUND 2 (12-10-2026) Task 1 — live-site review found a
+# Budget Type == "Both" Financial Model (FM-2026-00033, Bhopal) only
+# ever showed its OPEX dates; CAPEX was never surfaced. Round 1's
+# single OPEX-first/CAPEX-fallback pair is replaced here with two
+# INDEPENDENT pairs, kept under the SAME existing fieldnames
+# (custom_budget_start_date/custom_budget_end_date, now labelled "OPEX
+# Start/End Date" — relabel only, fieldname unchanged so old plan data
+# is unaffected; re-verified via grep across the whole bench that
+# nothing else reads these two fieldnames) plus two NEW fields
+# (custom_capex_start_date/custom_capex_end_date). Visibility is keyed
+# ONLY on budget_type via `depends_on` (plain JS — see
+# feedback_depends_on_pure_js: no in_list/cint/flt, client eval scope is
+# {doc, parent} only) — NEVER on whether a date happens to be populated,
+# because a Financial Model can have CAPEX dates filled in even when
+# budget_type == "OPEX" (confirmed possible: Financial Model's own
+# validate_dates only range-checks start<=end per pair; nothing clears
+# the "other" pair based on budget_type). get_approved_financial_model
+# now always returns both pairs, blanking (not just hiding) whichever
+# pair doesn't apply for the model's own budget_type, per the ticket's
+# "clear the other pair" instruction — so stale/irrelevant dates can't
+# leak into a report or reappear if depends_on is ever toggled off.
 # =====================================================================
+_OPEX_DATES_DEPENDS_ON = "eval:doc.custom_budget_type=='OPEX' || doc.custom_budget_type=='Both'"
+_CAPEX_DATES_DEPENDS_ON = "eval:doc.custom_budget_type=='CAPEX' || doc.custom_budget_type=='Both'"
+
+
 @frappe.whitelist()
 def get_approved_financial_model(project: str) -> dict:
-	"""ABP2-I782 req #4 — the Approved Financial Model for a Project, with
-	the budget-type-appropriate date pair. Filters on `workflow_state`
-	(NOT docstatus — see the note above). Display only — no validation,
-	no effect on any calculation, called only from the Production Plan
-	client script's `project` handler.
+	"""ABP2-I782 req #4 (Round 2 Task 1, 12-10-2026) — the Approved
+	Financial Model for a Project, with BOTH the OPEX and the CAPEX date
+	pair. Filters on `workflow_state` (NOT docstatus — see the note
+	above). Display only — no validation, no effect on any calculation,
+	called only from the Production Plan client script's `project`
+	handler.
 
-	budget_type == 'Both': no single pair of dates is authoritative: we
-	show OPEX dates first, falling back to CAPEX — flagged to the manager
-	as an assumption, not specified by the ticket."""
+	Each pair is returned ONLY when the model's own budget_type applies
+	to it (OPEX pair for 'OPEX'/'Both', CAPEX pair for 'CAPEX'/'Both') —
+	None otherwise, even if the Financial Model itself has a value
+	sitting in that pair's fields (Round 2's own worked example:
+	FM-2026-00039 is budget_type 'OPEX' but has CAPEX dates filled in;
+	those must never surface on the Production Plan). The client script
+	uses this to both fill the fields that apply AND blank the ones that
+	don't — visibility itself is driven by `depends_on` on budget_type,
+	never by whether a value is present (see _OPEX_DATES_DEPENDS_ON /
+	_CAPEX_DATES_DEPENDS_ON above)."""
 	if not project:
 		return {}
 	rows = frappe.get_all(
@@ -416,17 +459,15 @@ def get_approved_financial_model(project: str) -> dict:
 	if not rows:
 		return {}
 	fm = rows[0]
-	if fm.budget_type == "CAPEX":
-		start, end = fm.capex_start_date, fm.capex_end_date
-	elif fm.budget_type == "OPEX":
-		start, end = fm.opex_start_date, fm.opex_end_date
-	else:  # "Both" — OPEX first, CAPEX fallback (assumption, flagged above).
-		start, end = fm.opex_start_date or fm.capex_start_date, fm.opex_end_date or fm.capex_end_date
+	show_opex = fm.budget_type in ("OPEX", "Both")
+	show_capex = fm.budget_type in ("CAPEX", "Both")
 	return {
 		"project_budget": fm.name,
 		"budget_type": fm.budget_type,
-		"budget_start_date": start,
-		"budget_end_date": end,
+		"opex_start_date": fm.opex_start_date if show_opex else None,
+		"opex_end_date": fm.opex_end_date if show_opex else None,
+		"capex_start_date": fm.capex_start_date if show_capex else None,
+		"capex_end_date": fm.capex_end_date if show_capex else None,
 	}
 
 
@@ -490,20 +531,48 @@ def install_custom_fields() -> None:
 				"module": MODULE,
 			},
 			{
+				# Round 2 Task 1 — relabelled OPEX-only; fieldname kept
+				# so old Production Plan data is unaffected (grep-verified
+				# no other reader of this fieldname across the bench).
 				"fieldname": "custom_budget_start_date",
-				"label": "Budget Start Date",
+				"label": "OPEX Start Date",
 				"fieldtype": "Date",
 				"insert_after": "custom_budget_col_break",
 				"read_only": 1,
 				"module": MODULE,
+				"depends_on": _OPEX_DATES_DEPENDS_ON,
 			},
 			{
 				"fieldname": "custom_budget_end_date",
-				"label": "Budget End Date",
+				"label": "OPEX End Date",
 				"fieldtype": "Date",
 				"insert_after": "custom_budget_start_date",
 				"read_only": 1,
 				"module": MODULE,
+				"depends_on": _OPEX_DATES_DEPENDS_ON,
+			},
+			{
+				# Round 2 Task 1 — NEW. Shown only for budget_type
+				# CAPEX/Both (see _CAPEX_DATES_DEPENDS_ON); value itself
+				# is also blanked server-side when it doesn't apply
+				# (get_approved_financial_model), so the two safeguards
+				# (visibility + value) don't rely on each other alone.
+				"fieldname": "custom_capex_start_date",
+				"label": "CAPEX Start Date",
+				"fieldtype": "Date",
+				"insert_after": "custom_budget_end_date",
+				"read_only": 1,
+				"module": MODULE,
+				"depends_on": _CAPEX_DATES_DEPENDS_ON,
+			},
+			{
+				"fieldname": "custom_capex_end_date",
+				"label": "CAPEX End Date",
+				"fieldtype": "Date",
+				"insert_after": "custom_capex_start_date",
+				"read_only": 1,
+				"module": MODULE,
+				"depends_on": _CAPEX_DATES_DEPENDS_ON,
 			},
 		],
 		"Stock Entry": [
@@ -552,24 +621,37 @@ def install_custom_fields() -> None:
 
 
 def install_property_setters() -> None:
-	"""Hide (not delete) the Purchase Order link fields per the ticket's
-	item #2, on exactly the 2 locations confirmed as Custom Fields:
-	  - Stock Entry Detail.custom_purchase_order / custom_purchase_order_item
-	  - Landed Cost Taxes and Charges.custom_purchase_order / custom_purchase_order_item
-	`Detox Stock Entry Service Item.purchase_order` ("Service Purchase
-	Order") is deliberately LEFT VISIBLE — manager's call (2026-10-05):
-	it is the mechanism that routes a service item's own spend to its own
-	PO ("their expense stays with the Service Purchase Order" per the
-	CS1 Service Item Reroute script), structurally different from the
-	other 3 locations which were incidental PO plumbing for stock-item
-	rows. `purchase_order_item` on that doctype is already hidden=1 as a
-	native field in its own JSON (ground truth from production), so no
-	Property Setter is needed there."""
+	"""Hide (not delete) the Purchase Order link fields.
+
+	Round 1 (05-10-2026) hid 2 of the 3 locations
+	(Stock Entry Detail + Landed Cost Taxes and Charges) and deliberately
+	left `Detox Stock Entry Service Item.purchase_order` ("Service
+	Purchase Order") visible — it routes a service item's own spend to
+	its own PO, structurally different from the other two (incidental PO
+	plumbing for stock-item rows).
+
+	Round 2 (12-10-2026) Task 2 — the live-site review found it still
+	visible in the Service Items (Non Stock) grid and the client wants it
+	hidden there too; this REVERSES Round 1's visibility call for this
+	one field (hide, don't delete — same rule as the other 3; data and
+	the CS1 Service Item Reroute mechanism that still writes to the
+	field are both untouched). Confirmed safe to hide:
+	  - not `reqd` in the doctype's own JSON (nothing requires it on
+	    save/submit);
+	  - `recompute_service_item_rates` already falls back to the Table-2
+	    Standard Rate for rows with no PO set (abp2_i782_fixlist.py);
+	  - the Production Cost Comparison report reads `custom_purchase_order`
+	    / `custom_purchase_order_item` off `Stock Entry Detail`
+	    (production_cost_comparison.py) — a different field on a
+	    different doctype entirely, untouched by this PS.
+	`purchase_order_item` on this doctype is already hidden=1 as a native
+	field in its own JSON, so no Property Setter is needed for it."""
 	specs = [
 		("Stock Entry Detail", "custom_purchase_order", "hidden", "Check", "1"),
 		("Stock Entry Detail", "custom_purchase_order_item", "hidden", "Check", "1"),
 		("Landed Cost Taxes and Charges", "custom_purchase_order", "hidden", "Check", "1"),
 		("Landed Cost Taxes and Charges", "custom_purchase_order_item", "hidden", "Check", "1"),
+		("Detox Stock Entry Service Item", "purchase_order", "hidden", "Check", "1"),
 	]
 	for dt, field, prop, ptype, value in specs:
 		if not frappe.db.exists("DocType", dt):
