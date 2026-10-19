@@ -152,7 +152,7 @@ def dedupe_wbs_allocations(doc, method=None):
 
 
 def validate_material_request_budget(doc, method):
-	"""Block the MR if it takes its WBS / Sub WBS Element to 100% utilization or more."""
+	"""Block the MR if it takes its WBS / Sub WBS Element above 100% utilization."""
 	# ABP2-I457 reopen — kill float drift on allocated_amount BEFORE the
 	# AOS check fires (must run inside validate(), which precedes
 	# validate_update_after_submit in Frappe's _save() ordering).
@@ -176,7 +176,7 @@ def validate_material_request_budget(doc, method):
 
 		assigned = target.get_budget_stats()["assigned"] + flt(row.allocated_amount)
 		utilization = assigned / budget * 100
-		if utilization >= 100:
+		if flt(utilization, 2) > 100:
 			frappe.throw(
 				_(
 					"Budget exceeded for {0}. Budget: {1} | Assigned: {2} | Utilization: {3}%. "
