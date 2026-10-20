@@ -219,6 +219,10 @@ def validate_pr_dedupe(doc, method):
 	dedupe_wbs_allocations(doc)
 
 
+def on_mr_submit(doc, method):
+	_update_wbs_spent(doc)
+
+
 def on_po_submit(doc, method):
 	_update_wbs_spent(doc)
 

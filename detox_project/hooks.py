@@ -83,6 +83,9 @@ doc_events = {
 	},
 	"Material Request": {
 		"validate": "detox_project.detox_project.api.validate_material_request_budget",
+		# Submitting / cancelling an MR must refresh WBS budget_spent (RemOrdPlan).
+		"on_submit": "detox_project.detox_project.api.on_mr_submit",
+		"on_cancel": "detox_project.detox_project.api.on_mr_submit",
 	},
 	"Purchase Order": {
 		"validate": "detox_project.detox_project.api.validate_po_budget",

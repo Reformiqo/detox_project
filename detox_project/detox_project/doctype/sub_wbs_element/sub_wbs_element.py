@@ -148,6 +148,11 @@ class SubWBSElement(Document):
 		}
 
 	def refresh_spent_amounts(self):
+		# db_set instead of save: a failing master-data validation (FM category /
+		# parent budget) must not silently skip the spent refresh.
 		self.budget_spent = self.get_budget_stats()["assigned"]
 		self.calculate_totals()
-		self.save(ignore_permissions=True)
+		self.db_set({
+			"budget_spent": self.budget_spent,
+			"budget_utilization_pct": self.budget_utilization_pct,
+		})

@@ -5,3 +5,4 @@
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 detox_project.patches.remove_custom_wbs_connections
+detox_project.patches.refresh_all_wbs_budget_spent
