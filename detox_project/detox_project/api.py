@@ -198,11 +198,19 @@ def validate_po_budget(doc, method):
 	if not doc.get("custom_wbs_allocations"):
 		return
 
+	# Items raised from a Material Request are already counted in Assigned
+	# through that MR, so only the value of the other items is new spend.
+	new_value = sum(flt(item.net_amount) for item in doc.items if not item.material_request)
+	new_fraction = new_value / flt(doc.net_total) if flt(doc.net_total) else 1
+
 	for row in doc.custom_wbs_allocations:
 		if not row.wbs_element:
 			continue
+		amount = flt(row.allocated_amount) * new_fraction
+		if not amount:
+			continue
 		_validate_single_wbs_budget(
-			doc, row.wbs_element, flt(row.allocated_amount),
+			doc, row.wbs_element, amount,
 			warn_only=False, row_label=row.wbs_element,
 		)
 
@@ -516,7 +524,7 @@ def _validate_single_wbs_budget(doc, wbs_name, amount, warn_only=False, row_labe
 	if not wbs.budget_amount:
 		return
 	budget = flt(wbs.budget_amount)
-	spent = flt(wbs.budget_spent)
+	spent = wbs.get_budget_stats()["assigned"]
 	remaining = budget - spent
 
 	if amount > remaining and budget > 0:

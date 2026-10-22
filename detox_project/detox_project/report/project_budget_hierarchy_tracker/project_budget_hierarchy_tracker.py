@@ -18,7 +18,7 @@ Definitions (from FRD "Field Logic" tab):
   • RemOrdPlan   = Σ over MRs linked to this WBS, same shape with
                    (allocated_amount × outstanding_fraction)
                    where outstanding_fraction =
-                   max(0, (MR total − Σ ordered_qty × rate) / MR total)
+                   max(0, (MR total − value ordered on submitted POs) / MR total)
                    and MR is docstatus=1, status in
                    (Pending, Partially Ordered).
   • Assigned     = Actual + Commitment + RemOrdPlan (derived).
@@ -229,8 +229,10 @@ def _compute_rem_ord_plan(wbs_element, sub_wbs_element=None):
     """RemOrdPlan for a WBS = Σ over MRs allocated to it, of
     (allocated_amount × outstanding_fraction).
 
-    Outstanding fraction = (MR total − Σ ordered_qty × rate) / MR total,
-    floored at 0.
+    Outstanding fraction = (MR total − ordered value) / MR total, floored at 0.
+    Ordered value is read from the submitted PO items linked to each MR item,
+    not from MR Item.ordered_qty — ERPNext leaves that stale on some MRs,
+    which kept the MR counted on top of its PO (double count).
     """
     where_wbs = "wa.wbs_element = %s"
     args = [wbs_element]
@@ -247,9 +249,15 @@ def _compute_rem_ord_plan(wbs_element, sub_wbs_element=None):
                    WHERE mri.parent = mr.name
                ), 0) AS mr_total,
                COALESCE((
-                   SELECT SUM(mri.ordered_qty * mri.rate)
+                   SELECT SUM(mri.amount * LEAST(1, COALESCE((
+                       SELECT SUM(poi.stock_qty)
+                       FROM `tabPurchase Order Item` poi
+                       WHERE poi.material_request_item = mri.name
+                         AND poi.docstatus = 1
+                   ), 0) / mri.stock_qty))
                    FROM `tabMaterial Request Item` mri
                    WHERE mri.parent = mr.name
+                     AND mri.stock_qty > 0
                ), 0) AS ordered,
                wa.allocated_amount
         FROM `tabWBS Allocation` wa
