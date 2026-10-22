@@ -213,6 +213,12 @@ def validate_po_budget(doc, method):
 			doc, row.wbs_element, amount,
 			warn_only=False, row_label=row.wbs_element,
 		)
+		if row.sub_wbs_element:
+			_validate_single_wbs_budget(
+				doc, row.sub_wbs_element, amount,
+				warn_only=False, row_label=row.sub_wbs_element,
+				doctype="Sub WBS Element",
+			)
 
 
 def validate_pi_dedupe(doc, method):
@@ -519,10 +525,11 @@ def _update_wbs_spent(doc):
 			frappe.log_error(frappe.get_traceback(), f"Sub WBS Spent Update Error: {sub_wbs_name}")
 
 
-def _validate_single_wbs_budget(doc, wbs_name, amount, warn_only=False, row_label=""):
-	wbs = frappe.get_doc("WBS Element", wbs_name)
+def _validate_single_wbs_budget(doc, wbs_name, amount, warn_only=False, row_label="", doctype="WBS Element"):
+	wbs = frappe.get_doc(doctype, wbs_name)
 	if not wbs.budget_amount:
 		return
+	label = wbs.wbs_name if doctype == "WBS Element" else f"Sub WBS {wbs.sub_wbs_name}"
 	budget = flt(wbs.budget_amount)
 	spent = wbs.get_budget_stats()["assigned"]
 	remaining = budget - spent
@@ -532,7 +539,7 @@ def _validate_single_wbs_budget(doc, wbs_name, amount, warn_only=False, row_labe
 			"WBS [{0}]: Amount {1} exceeds remaining budget {2}. "
 			"Budget: {3} | Spent: {4}"
 		).format(
-			wbs.wbs_name,
+			label,
 			frappe.format_value(amount, {"fieldtype": "Currency"}),
 			frappe.format_value(remaining, {"fieldtype": "Currency"}),
 			frappe.format_value(budget, {"fieldtype": "Currency"}),
@@ -547,7 +554,7 @@ def _validate_single_wbs_budget(doc, wbs_name, amount, warn_only=False, row_labe
 	new_pct = (spent + amount) / budget * 100 if budget else 0
 	if new_pct >= 80:
 		frappe.msgprint(
-			_("WBS [{0}]: Utilization will reach {1}%").format(wbs.wbs_name, f"{new_pct:.1f}"),
+			_("WBS [{0}]: Utilization will reach {1}%").format(label, f"{new_pct:.1f}"),
 			indicator="orange",
 			title=_("Budget Warning"),
 		)
