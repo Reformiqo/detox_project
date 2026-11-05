@@ -41,27 +41,42 @@ frappe.ui.form.on("Sub WBS Element", {
 			}
 		}
 
+		sub_wbs_revenue_dashboard(frm);
+
+		// Dashboard "+" on Material Request opens the MR prefilled from this Sub WBS.
+		frm.make_methods = frm.make_methods || {};
+		frm.make_methods["Material Request"] = () => sub_wbs_new_material_request(frm);
+
 		if (frm.doc.status === "Active" && !frm.is_new()) {
 			frm.add_custom_button(
 				__("Material Request"),
-				() => {
-					// material_request_custom.js reads the hand-off to default the item
-					// WBS / Sub WBS; route_options are cleared before the new form's onload.
-					window.__detox_mr_wbs_handoff = {
-						wbs: frm.doc.main_wbs_element,
-						sub_wbs: frm.doc.name,
-					};
-					frappe.new_doc("Material Request", {
-						project: frm.doc.project,
-						company: frm.doc.company,
-						cost_center: frm.doc.cost_center,
-					});
-				},
+				() => sub_wbs_new_material_request(frm),
 				__("Create")
 			);
 		}
 
 		if (!frm.is_new()) {
+			frm.add_custom_button(__("Refresh Spent"), () => {
+				frappe.call({
+					method: "detox_project.detox_project.api.refresh_sub_wbs_spent",
+					args: { sub_wbs: frm.doc.name },
+					freeze: true,
+					freeze_message: __("Recalculating spent & utilization..."),
+					callback(r) {
+						if (r.message) {
+							frappe.show_alert({
+								message: __("Spent: {0} | Utilization: {1}%", [
+									format_currency(r.message.spent),
+									Math.round(r.message.utilization * 100) / 100,
+								]),
+								indicator: "green",
+							});
+							frm.reload_doc();
+						}
+					},
+				});
+			});
+
 			frm.add_custom_button(
 				__("Purchase Orders"),
 				() => {
@@ -83,6 +98,15 @@ frappe.ui.form.on("Sub WBS Element", {
 		});
 	},
 
+	// The controller renames a new Sub WBS after insert; open it under its final name.
+	after_save(frm) {
+		if (frm.doc.name && frm.doc.name.startsWith("SUB WBS-")) {
+			frappe.set_route("Form", "Sub WBS Element", frm.doc.name);
+		} else {
+			setTimeout(() => frm.reload_doc(), 500);
+		}
+	},
+
 	financial_model(frm) {
 		set_sub_wbs_category_filter(frm);
 		if (frm.doc.category) {
@@ -90,6 +114,29 @@ frappe.ui.form.on("Sub WBS Element", {
 		}
 	},
 });
+
+// New Material Request for this Sub WBS (see wbs_new_material_request in wbs_element.js).
+function sub_wbs_new_material_request(frm) {
+	window.__detox_mr_wbs_handoff = { wbs: frm.doc.main_wbs_element, sub_wbs: frm.doc.name };
+	frappe.db.get_value("WBS Element", frm.doc.main_wbs_element, ["company", "project", "cost_center"]).then((r) => {
+		const d = (r && r.message) || {};
+		frappe.new_doc("Material Request", { company: d.company, project: d.project, cost_center: d.cost_center });
+	});
+}
+
+// Revenue Sub WBS: show the Sales connections and Revenue Achieved %.
+// Expense Sub WBS: show the Purchase connections.
+function sub_wbs_revenue_dashboard(frm) {
+	const is_revenue = frm.doc.custom_category_type === "Revenue";
+	const hidden_group = is_revenue ? __("Purchase") : __("Sales");
+	frm.dashboard.links_area.body.find(".form-link-title").each(function () {
+		$(this).closest(".col-md-4").toggle($(this).text().trim() !== hidden_group);
+	});
+	if (is_revenue && !frm.is_new()) {
+		const pct = flt(frm.doc.custom_revenue_achievement_pct, 2);
+		frm.dashboard.add_indicator(__("Revenue Achieved: {0}%", [pct]), pct >= 100 ? "green" : "blue");
+	}
+}
 
 function set_sub_wbs_category_filter(frm) {
 	frm.set_query("category", () => {

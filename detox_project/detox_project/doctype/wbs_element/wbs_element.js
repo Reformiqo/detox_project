@@ -26,6 +26,11 @@ frappe.ui.form.on("WBS Element", {
 		// to every Sub WBS Element under this row (FR-08); reopens are
 		// role-gated to 'Budget Manager' (FR-11, enforced server-side).
 		_abp2_i416_setup_budget_buttons(frm);
+		wbs_revenue_dashboard(frm);
+
+		// Dashboard "+" on Material Request opens the MR prefilled from this WBS.
+		frm.make_methods = frm.make_methods || {};
+		frm.make_methods["Material Request"] = () => wbs_new_material_request(frm, "Material");
 
 		if (frm.doc.status === "Active" && !frm.is_new()) {
 			frm.add_custom_button(
@@ -119,6 +124,20 @@ function wbs_new_material_request(frm, request_type) {
 		cost_center: frm.doc.cost_center,
 		custom_request_type: request_type,
 	});
+}
+
+// Revenue WBS: show the Sales connections and Revenue Achieved %.
+// Expense WBS: show the Purchase connections.
+function wbs_revenue_dashboard(frm) {
+	const is_revenue = frm.doc.custom_category_type === "Revenue";
+	const hidden_group = is_revenue ? __("Purchase") : __("Sales");
+	frm.dashboard.links_area.body.find(".form-link-title").each(function () {
+		$(this).closest(".col-md-4").toggle($(this).text().trim() !== hidden_group);
+	});
+	if (is_revenue && !frm.is_new()) {
+		const pct = flt(frm.doc.custom_revenue_achievement_pct, 2);
+		frm.dashboard.add_indicator(__("Revenue Achieved: {0}%", [pct]), pct >= 100 ? "green" : "blue");
+	}
 }
 
 function set_category_filter(frm) {

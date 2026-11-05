@@ -45,7 +45,11 @@ doctype_js = {
 	"Material Request": "public/js/material_request_custom.js",
 	"Purchase Order": "public/js/purchase_order_custom.js",
 	"Purchase Invoice": "public/js/purchase_invoice_custom.js",
-	"Sales Order": "public/js/sales_order_custom.js",
+	"Sales Order": ["public/js/sales_order_custom.js", "public/js/revenue_wbs_allocation.js"],
+	"Sales Invoice": "public/js/revenue_wbs_allocation.js",
+	"Delivery Note": "public/js/revenue_wbs_allocation.js",
+	"Blanket Order": "public/js/revenue_wbs_allocation.js",
+	"Financial Model": "public/js/financial_model.js",
 	"Quotation": "public/js/quotation_custom.js",
 	# ABP2-I419 Phase 1 — Production Plan No-BOM mode client logic.
 	"Production Plan": "public/js/production_plan_custom.js",
@@ -114,6 +118,24 @@ doc_events = {
 		"on_submit": "detox_project.detox_project.api.on_pr_submit",
 		"on_cancel": "detox_project.detox_project.api.on_pr_submit",
 	},
+	# Revenue WBS Allocation (overrides/revenue_wbs.py). Runs after
+	# detox_waste_management's hooks, so Blanket Order custom_net_total is set.
+	"Sales Order": {
+		"validate": "detox_project.detox_project.overrides.revenue_wbs.validate_allocations",
+		"before_submit": "detox_project.detox_project.overrides.revenue_wbs.warn_revenue_target",
+		"on_submit": "detox_project.detox_project.overrides.revenue_wbs.rollup",
+		"on_cancel": "detox_project.detox_project.overrides.revenue_wbs.rollup",
+		"on_update_after_submit": "detox_project.detox_project.overrides.revenue_wbs.resync_after_update_items",
+	},
+	"Blanket Order": {
+		"validate": "detox_project.detox_project.overrides.revenue_wbs.validate_allocations",
+	},
+	"WBS Element": {
+		"validate": "detox_project.detox_project.overrides.revenue_wbs.wbs_revenue_achievement",
+	},
+	"Sub WBS Element": {
+		"validate": "detox_project.detox_project.overrides.revenue_wbs.sub_wbs_revenue_achievement",
+	},
 	"Tender Management": {
 		"on_update": "detox_project.events.tender.on_update",
 		"before_cancel": "detox_project.events.tender.before_cancel",
@@ -130,10 +152,17 @@ doc_events = {
 	},
 	# ABP2-I419 Phase 6 — Cylinder Deposit Ledger auto-create on DN / SI submit.
 	"Delivery Note": {
+		"validate": "detox_project.detox_project.overrides.revenue_wbs.validate_allocations",
 		"on_submit": "detox_project.detox_project.doctype.cylinder_deposit_ledger.cylinder_deposit_ledger.auto_create_deposit_entries",
 	},
 	"Sales Invoice": {
-		"on_submit": "detox_project.detox_project.doctype.cylinder_deposit_ledger.cylinder_deposit_ledger.auto_create_deposit_entries",
+		"validate": "detox_project.detox_project.overrides.revenue_wbs.validate_allocations",
+		"before_submit": "detox_project.detox_project.overrides.revenue_wbs.warn_revenue_target",
+		"on_submit": [
+			"detox_project.detox_project.doctype.cylinder_deposit_ledger.cylinder_deposit_ledger.auto_create_deposit_entries",
+			"detox_project.detox_project.overrides.revenue_wbs.rollup",
+		],
+		"on_cancel": "detox_project.detox_project.overrides.revenue_wbs.rollup",
 	},
 	# ABP2-I419 Phase 2 — CC + Project mandatory + cascade across the
 	# manufacturing chain. Single shared guard in
