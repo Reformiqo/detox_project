@@ -1,6 +1,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt
 
 from detox_project.detox_project.report.project_budget_hierarchy_tracker.project_budget_hierarchy_tracker import (
 	_compute_actual,
@@ -33,6 +34,7 @@ class WBSElement(Document):
 	def validate(self):
 		self.calculate_totals()
 		self.validate_category_budget()
+		self.validate_total_revenue()
 
 	def after_insert(self):
 		if not self.project:
@@ -108,6 +110,39 @@ class WBSElement(Document):
 					self.category,
 					frappe.format_value(total, {"fieldtype": "Currency"}),
 					frappe.format_value(fm_allocation, {"fieldtype": "Currency"}),
+				)
+			)
+
+	def validate_total_revenue(self):
+		# The project's WBS revenues together must fit in its Project Budget revenue.
+		if not self.project or not flt(self.total_revenue) or not self.has_value_changed("total_revenue"):
+			return
+		project_budget = frappe.db.get_value(
+			"Financial Model",
+			{"project": self.project, "docstatus": ["<", 2]},
+			["name", "total_annual_revenue"],
+			as_dict=True,
+		)
+		if not project_budget:
+			return
+		existing = frappe.db.sql(
+			"""
+			SELECT COALESCE(SUM(total_revenue), 0)
+			FROM `tabWBS Element`
+			WHERE project = %s AND name != %s AND status != 'Cancelled'
+			""",
+			(self.project, self.name or ""),
+		)[0][0]
+		total = flt(existing) + flt(self.total_revenue)
+		if flt(total, 2) > flt(project_budget.total_annual_revenue, 2):
+			frappe.throw(
+				_(
+					"Total Revenue of all WBS Elements in Project {0} is {1}. Exceeds Total Annual Base Revenue of {2} in Project Budget {3}."
+				).format(
+					self.project,
+					frappe.format_value(total, {"fieldtype": "Currency"}),
+					frappe.format_value(project_budget.total_annual_revenue, {"fieldtype": "Currency"}),
+					project_budget.name,
 				)
 			)
 

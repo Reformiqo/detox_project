@@ -42,14 +42,14 @@ fixtures = [
 # --------------------------------------------------------------------------
 doctype_js = {
 	"Project": "public/js/project_custom.js",
-	"Material Request": "public/js/material_request_custom.js",
-	"Purchase Order": "public/js/purchase_order_custom.js",
-	"Purchase Invoice": "public/js/purchase_invoice_custom.js",
-	"Purchase Receipt": "public/js/purchase_receipt_custom.js",
-	"Sales Order": ["public/js/sales_order_custom.js", "public/js/revenue_wbs_allocation.js"],
-	"Sales Invoice": "public/js/revenue_wbs_allocation.js",
-	"Delivery Note": "public/js/revenue_wbs_allocation.js",
-	"Blanket Order": "public/js/revenue_wbs_allocation.js",
+	"Material Request": ["public/js/wbs_allocation_sync.js", "public/js/material_request_custom.js"],
+	"Purchase Order": ["public/js/wbs_allocation_sync.js", "public/js/purchase_order_custom.js"],
+	"Purchase Invoice": ["public/js/wbs_allocation_sync.js", "public/js/purchase_invoice_custom.js"],
+	"Purchase Receipt": ["public/js/wbs_allocation_sync.js", "public/js/purchase_receipt_custom.js"],
+	"Sales Order": ["public/js/sales_order_custom.js", "public/js/revenue_wbs_allocation.js", "public/js/wbs_allocation_sync.js"],
+	"Sales Invoice": ["public/js/revenue_wbs_allocation.js", "public/js/wbs_allocation_sync.js"],
+	"Delivery Note": ["public/js/revenue_wbs_allocation.js", "public/js/wbs_allocation_sync.js"],
+	"Blanket Order": ["public/js/revenue_wbs_allocation.js", "public/js/wbs_allocation_sync.js"],
 	"Financial Model": "public/js/financial_model.js",
 	"Quotation": "public/js/quotation_custom.js",
 	# ABP2-I419 Phase 1 — Production Plan No-BOM mode client logic.
@@ -85,39 +85,53 @@ doc_events = {
 		"validate": "detox_project.detox_project.api.validate_project",
 		"on_update": "detox_project.detox_project.api.on_project_update",
 	},
+	# WBS header (custom_wbs_allocations) is rebuilt from the item rows —
+	# see overrides/purchase_wbs.py. Runs before the budget checks.
 	"Material Request": {
-		"validate": "detox_project.detox_project.api.validate_material_request_budget",
-		# Submitting / cancelling an MR must refresh WBS budget_spent (RemOrdPlan).
-		"on_submit": "detox_project.detox_project.api.on_mr_submit",
-		"on_cancel": "detox_project.detox_project.api.on_mr_submit",
+		"before_validate": "detox_project.detox_project.overrides.purchase_wbs.before_validate",
+		"validate": [
+			"detox_project.detox_project.overrides.purchase_wbs.validate",
+			"detox_project.detox_project.api.validate_material_request_budget",
+		],
+		# Also fires on status changes (Stop, Issued, ...), which skip on_submit / on_cancel.
+		"on_change": "detox_project.detox_project.api.refresh_wbs_on_change",
 	},
 	"Purchase Order": {
-		"validate": "detox_project.detox_project.api.validate_po_budget",
-		"on_submit": "detox_project.detox_project.api.on_po_submit",
-		# ABP2-I439 — cancelling a PO must decrement WBS budget_spent.
-		"on_cancel": "detox_project.detox_project.api.on_po_submit",
+		"before_validate": "detox_project.detox_project.overrides.purchase_wbs.before_validate",
+		"validate": [
+			"detox_project.detox_project.overrides.purchase_wbs.validate",
+			"detox_project.detox_project.api.validate_po_budget",
+		],
+		"before_update_after_submit": "detox_project.detox_project.overrides.purchase_wbs.before_update_after_submit",
+		# Also fires on Close / Reopen and Update Items, which skip on_submit / on_cancel.
+		"on_change": "detox_project.detox_project.api.refresh_wbs_on_change",
 	},
 	"Purchase Invoice": {
-		"validate": "detox_project.detox_project.api.validate_pi_dedupe",
+		"before_validate": "detox_project.detox_project.overrides.purchase_wbs.before_validate",
+		"validate": "detox_project.detox_project.overrides.purchase_wbs.validate",
 		"on_submit": "detox_project.detox_project.api.on_pi_submit",
 		# ABP2-I439 — cancelling a PI must decrement WBS budget_spent.
 		"on_cancel": "detox_project.detox_project.api.on_pi_submit",
 	},
 	"Purchase Receipt": {
-		"validate": "detox_project.detox_project.api.validate_pr_dedupe",
+		"before_validate": "detox_project.detox_project.overrides.purchase_wbs.before_validate",
+		"validate": "detox_project.detox_project.overrides.purchase_wbs.validate",
 		"on_submit": "detox_project.detox_project.api.on_pr_submit",
 		"on_cancel": "detox_project.detox_project.api.on_pr_submit",
 	},
 	# Revenue WBS Allocation (overrides/revenue_wbs.py). Runs after
 	# detox_waste_management's hooks, so Blanket Order custom_net_total is set.
 	"Sales Order": {
+		"before_validate": "detox_project.detox_project.overrides.purchase_wbs.before_validate",
 		"validate": "detox_project.detox_project.overrides.revenue_wbs.validate_allocations",
 		"before_submit": "detox_project.detox_project.overrides.revenue_wbs.warn_revenue_target",
 		"on_submit": "detox_project.detox_project.overrides.revenue_wbs.rollup",
 		"on_cancel": "detox_project.detox_project.overrides.revenue_wbs.rollup",
+		"before_update_after_submit": "detox_project.detox_project.overrides.revenue_wbs.before_update_after_submit",
 		"on_update_after_submit": "detox_project.detox_project.overrides.revenue_wbs.resync_after_update_items",
 	},
 	"Blanket Order": {
+		"before_validate": "detox_project.detox_project.overrides.purchase_wbs.before_validate",
 		"validate": "detox_project.detox_project.overrides.revenue_wbs.validate_allocations",
 	},
 	"WBS Element": {
@@ -146,6 +160,7 @@ doc_events = {
 		"on_submit": "detox_project.detox_project.doctype.cylinder_deposit_ledger.cylinder_deposit_ledger.auto_create_deposit_entries",
 	},
 	"Sales Invoice": {
+		"before_validate": "detox_project.detox_project.overrides.purchase_wbs.before_validate",
 		"validate": "detox_project.detox_project.overrides.revenue_wbs.validate_allocations",
 		"before_submit": "detox_project.detox_project.overrides.revenue_wbs.warn_revenue_target",
 		"on_submit": [

@@ -3,12 +3,25 @@
 Ported from the SEPPL Server Scripts "<Doctype> - Revenue WBS Allocation Validate",
 "Revenue WBS Rollup", "Sales Order - Revenue WBS Resync (Update Items)",
 "WBS Element / Sub WBS Element - Revenue Achievement".
+
+Blanket Order / Sales Order / Sales Invoice follow the purchase rules
+(overrides/purchase_wbs.py): item rows hold the WBS and the table must match them.
+A document with no item WBS raised from an older document keeps the old
+table-only flow. Delivery Note items stay blank: their WBS is a stock dimension.
 """
 
 import frappe
 from frappe.utils import flt, fmt_money
 
+from detox_project.detox_project.overrides.purchase_wbs import (
+	get_item_wbs_totals,
+	rebuild_wbs_allocations,
+	validate_item_wbs,
+	validate_wbs_allocations,
+)
+
 TABLE = "custom_wbs_allocations"
+ITEM_WBS_DOCTYPES = ("Blanket Order", "Sales Order", "Sales Invoice")
 
 
 def _base_amount(doc):
@@ -150,27 +163,57 @@ def _validate_rows(doc, allocs, project):
 		seen.append(key)
 
 
+def _uses_item_wbs(doc):
+	if doc.doctype not in ITEM_WBS_DOCTYPES:
+		return False
+	if get_item_wbs_totals(doc):
+		return True
+	# No item WBS: an older source document still drives the table.
+	return not any(_source_of(doc, item)[1] for item in doc.items)
+
+
+def _check_blanket_order_has_allocation(doc, project, base):
+	"""Mandatory on a Selling Blanket Order once the project has an active Revenue WBS."""
+	if doc.doctype != "Blanket Order" or doc.get(TABLE):
+		return
+	if doc.get("blanket_order_type") == "Selling" and project and base:
+		if frappe.db.exists("WBS Element", {"project": project, "custom_category_type": "Revenue", "status": ["!=", "Cancelled"]}):
+			frappe.throw(
+				f"Revenue WBS Allocation is mandatory on a Selling Blanket Order for project {project}. Please add at least one row in the Revenue WBS Allocations table.",
+				title="Revenue WBS Allocation Required",
+			)
+
+
 def validate_allocations(doc, method=None):
-	"""validate: copy the allocation from the source document, sync amounts, check every row."""
-	allocs = doc.get(TABLE) or []
+	"""validate: check the table against the item rows, or for the old flow copy it from the source and sync amounts."""
 	base = _base_amount(doc)
 	project = _project(doc)
 
-	if doc.doctype == "Blanket Order":
-		# Mandatory on a Selling Blanket Order once the project has an active Revenue WBS.
-		if not allocs and doc.get("blanket_order_type") == "Selling" and project and base:
-			if frappe.db.exists("WBS Element", {"project": project, "custom_category_type": "Revenue", "status": ["!=", "Cancelled"]}):
-				frappe.throw(
-					f"Revenue WBS Allocation is mandatory on a Selling Blanket Order for project {project}. Please add at least one row in the Revenue WBS Allocations table.",
-					title="Revenue WBS Allocation Required",
-				)
-	elif not allocs:
-		_copy_from_sources(doc)
-		allocs = doc.get(TABLE) or []
+	if _uses_item_wbs(doc):
+		validate_item_wbs(doc)
+		# Filled again: net_amount is final only after ERPNext's own validate.
+		if doc.flags.fill_wbs_allocations:
+			rebuild_wbs_allocations(doc)
+		validate_wbs_allocations(doc)
+		_check_blanket_order_has_allocation(doc, project, base)
+		if doc.get(TABLE):
+			_validate_rows(doc, doc.get(TABLE), project)
+		return
 
+	if not doc.get(TABLE):
+		_copy_from_sources(doc)
+
+	allocs = doc.get(TABLE) or []
 	if allocs:
 		_sync_amounts(allocs, base)
 		_validate_rows(doc, allocs, project)
+
+
+def before_update_after_submit(doc, method=None):
+	# "Update Items" changes the rows without running validate. A Sales Order
+	# with no item WBS keeps its table; resync_after_update_items re-scales it.
+	if doc.flags.ignore_validate_update_after_submit and get_item_wbs_totals(doc):
+		rebuild_wbs_allocations(doc)
 
 
 def warn_revenue_target(doc, method=None):
@@ -217,8 +260,13 @@ def _submitted_total(parenttype, link_field, name):
 
 def rollup(doc, method=None):
 	"""on_submit / on_cancel / Update Items: recompute revenue totals on the WBS and Sub WBS from all submitted SO / SI."""
-	wbs_set = {row.wbs_element for row in doc.get(TABLE) or [] if row.get("wbs_element")}
-	sub_set = {row.sub_wbs_element for row in doc.get(TABLE) or [] if row.get("sub_wbs_element")}
+	rows = list(doc.get(TABLE) or [])
+	# Update Items can drop a WBS from the table; its totals must still refresh.
+	before = doc.get_doc_before_save()
+	if before:
+		rows += list(before.get(TABLE) or [])
+	wbs_set = {row.wbs_element for row in rows if row.get("wbs_element")}
+	sub_set = {row.sub_wbs_element for row in rows if row.get("sub_wbs_element")}
 
 	for w in wbs_set:
 		so_total = _submitted_total("Sales Order", "wbs_element", w)
@@ -258,6 +306,10 @@ def rollup(doc, method=None):
 
 def resync_after_update_items(doc, method=None):
 	"""on_update_after_submit (Sales Order "Update Items"): re-scale Allocated Amount to the new Net Total, then roll up."""
+	if get_item_wbs_totals(doc):
+		rollup(doc)
+		return
+
 	allocs = doc.get(TABLE) or []
 	if not allocs:
 		return

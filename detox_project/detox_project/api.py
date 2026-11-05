@@ -3,56 +3,7 @@ from frappe import _
 from frappe.utils import flt
 from frappe.query_builder import Field
 from frappe.query_builder.terms import ValueWrapper
-from decimal import Decimal, ROUND_HALF_UP
 
-
-# ---------------------------------------------------------------------------
-# ABP2-I457 reopen (Sahil 2026-06-16) — kill IEEE-754 float drift on
-# WBS Allocation.allocated_amount before the framework's AOS guard runs.
-#
-# The bug: editing a SUBMITTED Material Request / PO / PI / PR throws
-#   Cannot Update After Submit
-#   Row #1: Not allowed to change Allocated Amount after submission
-#   from 3267826.12 to 3267826.11999999996
-# (See ticket I457 screenshot.) Root cause: the form-side accumulation
-# of item amounts (Σ items.amount per WBS bucket) lands on a float
-# whose shortest decimal repr is 3267826.1199999996 — a *different*
-# IEEE 754 double than 3267826.12. The DB stores the original via
-# decimal(21,9), comes back as Decimal('3267826.12'), Frappe's
-# _fix_numeric_types casts that to float(Decimal('3267826.12')) =
-# 3267826.12. Comparison 3267826.12 != 3267826.1199999996 → AOS throw.
-#
-# The prior fix gated the JS recompute on docstatus==0, but the drifted
-# value was already persisted at SUBMIT time, so the doc itself carries
-# the bad number — and re-opening it ships that number back unchanged.
-# Re-rounding at save time also fixes the legacy data on next edit.
-#
-# Decimal('3267826.1199999996').quantize(Decimal('0.01'), HALF_UP)
-#   = Decimal('3267826.12')
-# float(Decimal('3267826.12'))
-#   = 3267826.12  (the same float the DB read returns after _fix_…)
-# AOS guard now compares 3267826.12 == 3267826.12 → passes.
-# ---------------------------------------------------------------------------
-_TWO_PLACES = Decimal("0.01")
-
-
-def _round_allocated_amounts(doc):
-    """Quantize every custom_wbs_allocations row's allocated_amount to
-    2 decimal places using Decimal half-up, then cast back to float so
-    Frappe's downstream type checks still match. Idempotent — running
-    it twice yields the same value."""
-    if not doc.get("custom_wbs_allocations"):
-        return
-    for row in doc.custom_wbs_allocations:
-        if row.allocated_amount in (None, ""):
-            continue
-        rounded = float(
-            Decimal(str(row.allocated_amount)).quantize(
-                _TWO_PLACES, rounding=ROUND_HALF_UP
-            )
-        )
-        if row.allocated_amount != rounded:
-            row.allocated_amount = rounded
 
 # ---------------------------------------------------------------------------
 # Document Event Hooks
@@ -107,58 +58,8 @@ def on_project_update(doc, method):
 			frappe.db.set_value("WBS Element", wbs_name, "status", "Completed")
 
 
-def dedupe_wbs_allocations(doc, method=None):
-	"""ABP2-I455 (Sahil 2026-06-15) — collapse duplicate WBS Allocation rows.
-
-	When a Purchase Order / Purchase Invoice / Purchase Receipt is built via
-	"Get Items From → Material Request" with multiple source MRs, Frappe's
-	get_mapped_doc auto-copies every child table that has the same fieldname
-	+ same child-doctype + no_copy=0 on both source and target (see
-	frappe/model/mapper.py:102-118). `custom_wbs_allocations` matches that
-	rule on MR/PO/PI/PR, so each source MR APPENDS its allocation rows to
-	the target — no dedup. Result: 3 MRs all carrying WBS-004.8 give a PO
-	with 3 identical WBS-004.8 rows.
-
-	Sahil's spec — "each WBS displayed only once unless multiple valid
-	allocations exist" — translates to dedupe by (wbs_element,
-	sub_wbs_element). Rows with the same combo collapse to the first
-	occurrence; rows with the same wbs_element but different sub_wbs_element
-	survive (genuine multi-allocation case).
-
-	Runs in before_validate so the deduped rows are persisted, and downstream
-	validators (validate_*_budget) see the clean list.
-	"""
-	rows = doc.get("custom_wbs_allocations") or []
-	if not rows:
-		return
-
-	seen = set()
-	deduped = []
-	for row in rows:
-		# Empty wbs_element rows are draft skeletons — keep one, drop further empties.
-		key = (row.wbs_element or "", row.sub_wbs_element or "")
-		if key in seen:
-			continue
-		seen.add(key)
-		deduped.append(row)
-
-	if len(deduped) == len(rows):
-		return  # no change
-
-	# Re-index from 1 so the grid stays tidy.
-	for new_idx, row in enumerate(deduped, start=1):
-		row.idx = new_idx
-	doc.set("custom_wbs_allocations", deduped)
-
-
 def validate_material_request_budget(doc, method):
 	"""Block the MR if it takes its WBS / Sub WBS Element above 100% utilization."""
-	# ABP2-I457 reopen — kill float drift on allocated_amount BEFORE the
-	# AOS check fires (must run inside validate(), which precedes
-	# validate_update_after_submit in Frappe's _save() ordering).
-	_round_allocated_amounts(doc)
-	dedupe_wbs_allocations(doc)
-
 	for row in doc.get("custom_wbs_allocations") or []:
 		if not row.wbs_element:
 			continue
@@ -192,53 +93,36 @@ def validate_material_request_budget(doc, method):
 
 
 def validate_po_budget(doc, method):
-	"""Hard block per WBS allocation row if budget exceeded."""
-	_round_allocated_amounts(doc)  # ABP2-I457 reopen — AOS-safe.
-	dedupe_wbs_allocations(doc)
-	if not doc.get("custom_wbs_allocations"):
-		return
-
+	"""Hard block if the PO takes a WBS / Sub WBS Element above its budget."""
 	# Items raised from a Material Request are already counted in Assigned
 	# through that MR, so only the value of the other items is new spend.
-	new_value = sum(flt(item.net_amount) for item in doc.items if not item.material_request)
-	new_fraction = new_value / flt(doc.net_total) if flt(doc.net_total) else 1
+	wbs_amounts = {}
+	sub_wbs_amounts = {}
+	for item in doc.items:
+		if not item.custom_wbs_element or item.material_request:
+			continue
+		# Company currency, like the budget: an import PO's net_amount is in its own currency.
+		wbs_amounts[item.custom_wbs_element] = wbs_amounts.get(item.custom_wbs_element, 0) + flt(item.base_net_amount)
+		if item.custom_sub_wbs_element:
+			sub_wbs_amounts[item.custom_sub_wbs_element] = (
+				sub_wbs_amounts.get(item.custom_sub_wbs_element, 0) + flt(item.base_net_amount)
+			)
 
-	for row in doc.custom_wbs_allocations:
-		if not row.wbs_element:
-			continue
-		amount = flt(row.allocated_amount) * new_fraction
-		if not amount:
-			continue
-		_validate_single_wbs_budget(
-			doc, row.wbs_element, amount,
-			warn_only=False, row_label=row.wbs_element,
-		)
-		if row.sub_wbs_element:
+	for wbs, amount in wbs_amounts.items():
+		if amount > 0:
+			_validate_single_wbs_budget(doc, wbs, amount, warn_only=False, row_label=wbs)
+	for sub_wbs, amount in sub_wbs_amounts.items():
+		if amount > 0:
 			_validate_single_wbs_budget(
-				doc, row.sub_wbs_element, amount,
-				warn_only=False, row_label=row.sub_wbs_element,
-				doctype="Sub WBS Element",
+				doc, sub_wbs, amount, warn_only=False, row_label=sub_wbs, doctype="Sub WBS Element",
 			)
 
 
-def validate_pi_dedupe(doc, method):
-	"""Purchase Invoice has no budget validator, but still needs dedup."""
-	_round_allocated_amounts(doc)  # ABP2-I457 reopen — AOS-safe.
-	dedupe_wbs_allocations(doc)
-
-
-def validate_pr_dedupe(doc, method):
-	"""Purchase Receipt has no budget validator, but still needs dedup."""
-	_round_allocated_amounts(doc)  # ABP2-I457 reopen — AOS-safe.
-	dedupe_wbs_allocations(doc)
-
-
-def on_mr_submit(doc, method):
-	_update_wbs_spent(doc)
-
-
-def on_po_submit(doc, method):
-	_update_wbs_spent(doc)
+def refresh_wbs_on_change(doc, method):
+	"""Material Request / Purchase Order: anything that changes a submitted
+	document, including a status change, can change Budget Spent."""
+	if doc.docstatus:
+		_update_wbs_spent(doc)
 
 
 def on_pi_submit(doc, method):
@@ -520,15 +404,13 @@ def send_budget_alerts():
 def _update_wbs_spent(doc):
 	wbs_set = set()
 	sub_wbs_set = set()
-
-	if doc.get("custom_wbs_allocations"):
-		for row in doc.custom_wbs_allocations:
-			if row.wbs_element:
-				wbs_set.add(row.wbs_element)
-			if row.sub_wbs_element:
-				sub_wbs_set.add(row.sub_wbs_element)
-	else:
-		pass  # Old fields removed — no backward compat needed
+	# Rows removed by Update Items are only on the previous version of the document.
+	before_save = doc.get_doc_before_save()
+	for item in list(doc.items) + list(before_save.items if before_save else []):
+		if item.custom_wbs_element:
+			wbs_set.add(item.custom_wbs_element)
+		if item.custom_sub_wbs_element:
+			sub_wbs_set.add(item.custom_sub_wbs_element)
 
 	for wbs_name in wbs_set:
 		try:

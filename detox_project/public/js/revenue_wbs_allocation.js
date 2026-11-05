@@ -27,6 +27,21 @@ window.rev_wbs_allocation_bound = true;
                 if (row && row.wbs_element) filters.main_wbs_element = row.wbs_element;
                 return { filters: filters };
             });
+            if (doctype !== 'Delivery Note' && frappe.meta.has_field(doctype + ' Item', 'custom_wbs_element')) {
+                frm.set_query('custom_wbs_element', 'items', () => {
+                    const filters = { custom_category_type: 'Revenue', status: ['!=', 'Cancelled'] };
+                    const project = rev_wbs_project(frm);
+                    if (project) filters.project = project;
+                    if (frm.doc.company) filters.company = frm.doc.company;
+                    return { filters: filters };
+                });
+                frm.set_query('custom_sub_wbs_element', 'items', (doc, cdt, cdn) => {
+                    const row = locals[cdt][cdn];
+                    const filters = { status: ['!=', 'Cancelled'] };
+                    if (row && row.custom_wbs_element) filters.main_wbs_element = row.custom_wbs_element;
+                    return { filters: filters };
+                });
+            }
         },
         custom_wbs_allocations_add(frm) { rev_sync_alloc_amounts(frm); },
         validate(frm) { rev_sync_alloc_amounts(frm); },
@@ -70,6 +85,8 @@ function rev_sync_alloc_delayed(frm) {
 }
 
 function rev_sync_alloc_amounts(frm) {
+    // With WBS on the item rows the server checks the amounts, so don't change them here.
+    if (frm.doctype !== 'Delivery Note' && (frm.doc.items || []).some(r => r.custom_wbs_element)) return;
     // Blanket Order keeps its totals in custom fields; all other sales documents use net_total.
     const base = flt(frm.doctype === 'Blanket Order' ? frm.doc.custom_net_total : frm.doc.net_total, 2);
     const rows = frm.doc.custom_wbs_allocations || [];
