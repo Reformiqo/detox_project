@@ -45,11 +45,17 @@ frappe.ui.form.on("Sub WBS Element", {
 			frm.add_custom_button(
 				__("Material Request"),
 				() => {
+					// material_request_custom.js reads the hand-off to default the item
+					// WBS / Sub WBS; route_options are cleared before the new form's onload.
+					window.__detox_mr_wbs_handoff = {
+						wbs: frm.doc.main_wbs_element,
+						sub_wbs: frm.doc.name,
+					};
 					frappe.new_doc("Material Request", {
 						project: frm.doc.project,
 						company: frm.doc.company,
+						cost_center: frm.doc.cost_center,
 					});
-					frappe.route_options = { _wbs_element: frm.doc.main_wbs_element };
 				},
 				__("Create")
 			);

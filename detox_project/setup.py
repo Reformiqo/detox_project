@@ -14,7 +14,6 @@ def after_migrate():
 	create_custom_fields()
 	create_project_types()
 	patch_fm_wbs_fields_to_link()
-	migrate_wbs_allocations()
 	fix_budget_notification()
 	cleanup_old_wbs_fields()
 	create_fm_property_setters()
@@ -608,8 +607,10 @@ def create_custom_fields():
 				module="Detox Project"),
 			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
 				label="WBS Allocations", insert_after="custom_financial_model"),
+			# Read-only + no_copy: rebuilt from the item WBS (overrides/purchase_wbs.py),
+			# so it must not be carried over when this document is mapped from another.
 			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
-				label="WBS Allocations", options="WBS Allocation",
+				label="WBS Allocations", options="WBS Allocation", read_only=1, no_copy=1,
 				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
@@ -637,8 +638,10 @@ def create_custom_fields():
 		"Purchase Order": [
 			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
 				label="WBS Allocations", insert_after="project"),
+			# Read-only + no_copy: rebuilt from the item WBS (overrides/purchase_wbs.py),
+			# so it must not be carried over when this document is mapped from another.
 			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
-				label="WBS Allocations", options="WBS Allocation",
+				label="WBS Allocations", options="WBS Allocation", read_only=1, no_copy=1,
 				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
@@ -657,8 +660,10 @@ def create_custom_fields():
 		"Purchase Invoice": [
 			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
 				label="WBS Allocations", insert_after="project"),
+			# Read-only + no_copy: rebuilt from the item WBS (overrides/purchase_wbs.py),
+			# so it must not be carried over when this document is mapped from another.
 			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
-				label="WBS Allocations", options="WBS Allocation",
+				label="WBS Allocations", options="WBS Allocation", read_only=1, no_copy=1,
 				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
@@ -677,8 +682,10 @@ def create_custom_fields():
 		"Purchase Receipt": [
 			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
 				label="WBS Allocations", insert_after="project"),
+			# Read-only + no_copy: rebuilt from the item WBS (overrides/purchase_wbs.py),
+			# so it must not be carried over when this document is mapped from another.
 			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
-				label="WBS Allocations", options="WBS Allocation",
+				label="WBS Allocations", options="WBS Allocation", read_only=1, no_copy=1,
 				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
@@ -904,62 +911,6 @@ def _set_property(doctype, fieldname, prop, value):
 				"module": "Detox Project",
 			}
 		).insert(ignore_permissions=True)
-
-
-def migrate_wbs_allocations():
-	"""Migrate old single custom_wbs_element to WBS Allocation child table."""
-	from frappe.utils import flt
-
-	if not frappe.db.exists("DocType", "WBS Allocation"):
-		return
-
-	for doctype in ("Material Request", "Purchase Order", "Purchase Invoice"):
-		table_field = "custom_wbs_allocations"
-
-		# Skip if old columns don't exist (already migrated or never had them)
-		if not frappe.db.has_column(doctype, "custom_wbs_element"):
-			continue
-
-		# Find docs with old WBS element but no allocation rows
-		docs = frappe.db.sql(
-			"""
-			SELECT name, custom_wbs_element, custom_sub_wbs_element
-			FROM `tab{dt}`
-			WHERE custom_wbs_element IS NOT NULL
-			AND custom_wbs_element != ''
-			AND name NOT IN (
-				SELECT DISTINCT parent FROM `tabWBS Allocation`
-				WHERE parenttype = %(dt)s
-			)
-			""".format(dt=doctype),
-			{"dt": doctype},
-			as_dict=True,
-		)
-
-		for doc in docs:
-			if doctype == "Material Request":
-				amount = frappe.db.sql(
-					"SELECT COALESCE(SUM(amount), 0) FROM `tabMaterial Request Item` WHERE parent=%s",
-					doc.name,
-				)[0][0] or 0
-			else:
-				amount = frappe.db.get_value(doctype, doc.name, "grand_total") or 0
-
-			frappe.get_doc(
-				{
-					"doctype": "WBS Allocation",
-					"parent": doc.name,
-					"parenttype": doctype,
-					"parentfield": table_field,
-					"idx": 1,
-					"wbs_element": doc.custom_wbs_element,
-					"sub_wbs_element": doc.custom_sub_wbs_element or "",
-					"allocated_amount": amount,
-				}
-			).db_insert()
-
-		if docs:
-			frappe.db.commit()
 
 
 def heal_duplicate_wbs_allocations():

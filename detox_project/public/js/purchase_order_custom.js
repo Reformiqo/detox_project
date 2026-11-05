@@ -1,111 +1,50 @@
-// Same logic as Material Request — adapted for Purchase Order
+// WBS / Sub WBS are picked on the item rows only. The WBS Allocations
+// table is read-only and rebuilt from the items on save
+// (overrides/purchase_wbs.py).
 
 frappe.ui.form.on("Purchase Order", {
 	onload(frm) {
 		if (!frm.is_new()) return;
-		var route_opts = frappe.route_options || {};
-		var sub_wbs = route_opts.sub_wbs_element || route_opts._wbs_element;
-		if (!sub_wbs) return;
-		delete frappe.route_options.sub_wbs_element;
-		delete frappe.route_options._wbs_element;
 
-		if (sub_wbs.startsWith("WBS-")) {
-			if (!frm.doc.custom_wbs_allocations || frm.doc.custom_wbs_allocations.length === 0) {
-				var row = frm.add_child("custom_wbs_allocations");
-				frappe.model.set_value(row.doctype, row.name, "wbs_element", sub_wbs);
-				frm.refresh_field("custom_wbs_allocations");
-			}
-		} else {
-			frappe.db.get_value("Sub WBS Element", sub_wbs,
-				["name", "main_wbs_element"], function (r) {
-					if (!r || !r.main_wbs_element) return;
-					frm.doc.custom_wbs_allocations = [];
-					var row = frappe.model.add_child(frm.doc, "WBS Allocation", "custom_wbs_allocations");
-					row.wbs_element = r.main_wbs_element;
-					row.sub_wbs_element = sub_wbs;
-					frm.refresh_field("custom_wbs_allocations");
-				}
-			);
+		// Opened from a WBS Element (Create > Purchase Order): that WBS becomes
+		// the default for every item row.
+		var h = window.__detox_mr_wbs_handoff;
+		window.__detox_mr_wbs_handoff = null;
+		if (h && h.wbs) {
+			// Frappe reuses frm across documents, so tie the default to this one.
+			frm.__default_wbs = { wbs: h.wbs, sub_wbs: h.sub_wbs, docname: frm.docname };
+			(frm.doc.items || []).forEach(function (item) { set_default_item_wbs(frm, item); });
 		}
 	},
 
 	refresh(frm) {
-		frm.set_query("wbs_element", "custom_wbs_allocations", () => {
-			let filters = { status: "Active" };
-			if (frm.doc.project) filters.project = frm.doc.project;
-			return { filters };
-		});
-		frm.set_query("sub_wbs_element", "custom_wbs_allocations", (frm, cdt, cdn) => {
-			let row = locals[cdt][cdn];
-			let filters = { status: "Active" };
-			if (row.wbs_element) filters.main_wbs_element = row.wbs_element;
-			return { filters };
-		});
-		frm.set_query("custom_wbs_element", "items", () => {
-			let filters = { status: "Active" };
-			if (frm.doc.project) filters.project = frm.doc.project;
-			return { filters };
-		});
-		frm.set_query("custom_sub_wbs_element", "items", (frm, cdt, cdn) => {
-			let row = locals[cdt][cdn];
-			let filters = { status: "Active" };
-			if (row.custom_wbs_element) filters.main_wbs_element = row.custom_wbs_element;
-			return { filters };
-		});
-		calculate_wbs_allocated_amounts_po(frm);
+		set_item_wbs_queries(frm);
 	},
 });
 
 frappe.ui.form.on("Purchase Order Item", {
-	custom_wbs_element(frm) { calculate_wbs_allocated_amounts_po(frm); },
-	custom_sub_wbs_element(frm) { calculate_wbs_allocated_amounts_po(frm); },
-	amount(frm) { handle_single_wbs_auto_assign_po(frm); calculate_wbs_allocated_amounts_po(frm); },
-	rate(frm) { handle_single_wbs_auto_assign_po(frm); calculate_wbs_allocated_amounts_po(frm); },
-	qty(frm) { handle_single_wbs_auto_assign_po(frm); calculate_wbs_allocated_amounts_po(frm); },
-	items_remove(frm) { calculate_wbs_allocated_amounts_po(frm); },
+	items_add(frm, cdt, cdn) { set_default_item_wbs(frm, locals[cdt][cdn]); },
 });
 
-frappe.ui.form.on("WBS Allocation", {
-	wbs_element(frm) { handle_single_wbs_auto_assign_po(frm); calculate_wbs_allocated_amounts_po(frm); },
-	sub_wbs_element(frm) { handle_single_wbs_auto_assign_po(frm); calculate_wbs_allocated_amounts_po(frm); },
-	custom_wbs_allocations_remove(frm) { calculate_wbs_allocated_amounts_po(frm); },
-});
-
-function handle_single_wbs_auto_assign_po(frm) {
-	var allocs = frm.doc.custom_wbs_allocations || [];
-	if (allocs.length !== 1 || !allocs[0].wbs_element) return;
-	var w = allocs[0], updated = false;
-	(frm.doc.items || []).forEach(function (item) {
-		if (!item.custom_wbs_element) {
-			frappe.model.set_value(item.doctype, item.name, "custom_wbs_element", w.wbs_element);
-			updated = true;
-		}
-		if (!item.custom_sub_wbs_element && w.sub_wbs_element) {
-			frappe.model.set_value(item.doctype, item.name, "custom_sub_wbs_element", w.sub_wbs_element);
-			updated = true;
-		}
+function set_item_wbs_queries(frm) {
+	frm.set_query("custom_wbs_element", "items", (doc, cdt, cdn) => {
+		let row = locals[cdt][cdn];
+		let filters = { status: "Active" };
+		if (row.project || frm.doc.project) filters.project = row.project || frm.doc.project;
+		return { filters };
 	});
-	if (updated) frm.refresh_field("items");
+	frm.set_query("custom_sub_wbs_element", "items", (doc, cdt, cdn) => {
+		let row = locals[cdt][cdn];
+		let filters = { status: "Active" };
+		if (row.custom_wbs_element) filters.main_wbs_element = row.custom_wbs_element;
+		return { filters };
+	});
 }
 
-function calculate_wbs_allocated_amounts_po(frm) {
-	// ABP2-I457 (Sahil 2026-06-16) — Submitted-doc allow_on_submit
-	// guard + IEEE-754 drift tolerance. See material_request_custom.js
-	// for the full story.
-	if (frm.doc.docstatus !== 0) return;
-
-	var allocs = frm.doc.custom_wbs_allocations || [];
-	if (allocs.length === 1 && allocs[0].wbs_element) handle_single_wbs_auto_assign_po(frm);
-	var map = {};
-	(frm.doc.items || []).forEach(function (item) {
-		var key = (item.custom_wbs_element || "") + "||" + (item.custom_sub_wbs_element || "");
-		map[key] = (map[key] || 0) + flt(item.amount);
-	});
-	allocs.forEach(function (alloc) {
-		var key = (alloc.wbs_element || "") + "||" + (alloc.sub_wbs_element || "");
-		var amt = map[key] || 0;
-		if (Math.abs(flt(alloc.allocated_amount) - amt) > 0.005)
-			frappe.model.set_value(alloc.doctype, alloc.name, "allocated_amount", amt);
-	});
-	frm.refresh_field("custom_wbs_allocations");
+function set_default_item_wbs(frm, item) {
+	var d = frm.__default_wbs;
+	if (!d || d.docname !== frm.docname || item.custom_wbs_element) return;
+	item.custom_wbs_element = d.wbs;
+	item.custom_sub_wbs_element = d.sub_wbs || "";
+	frm.refresh_field("items");
 }

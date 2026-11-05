@@ -27,10 +27,17 @@ Managed via `setup.py` → `create_custom_fields()`:
 - Old `custom_wbs_element` / `custom_sub_wbs_element` fields are hidden but kept for backward compat
 - Project: budget summary, revenue tracking, financial model link, tender details
 
+## WBS on MR / PO / PR / PI (overrides/purchase_wbs.py)
+
+- Users pick WBS / Sub WBS on the **item rows only**. `custom_wbs_allocations` is read-only, not copied when a document is mapped (`no_copy`), and rebuilt from the items on every save (one row per WBS + Sub WBS, amount = Σ base_net_amount in company currency; MR: amount).
+- Blank item WBS is copied from the source row (MR item → PO item → PR item → PI item); a row whose WBS differs from its source row is blocked.
+- Blocked: some rows with a WBS and some without, Sub WBS of another WBS, WBS of another project, ₹0 WBS amount.
+
 ## Budget validation flow
 
-- **MR validate**: Soft warning per WBS allocation row if budget nearing 80%
-- **PO validate**: Hard block per WBS allocation row if any >100%
-- **PO/PI/PR submit**: Refresh spent for ALL WBS/Sub WBS in allocation table
+- **MR validate**: Hard block per WBS / Sub WBS if Assigned would exceed 100%
+- **PO validate**: Hard block per WBS / Sub WBS on items not raised from an MR
+- **Spent refresh** (every WBS/Sub WBS on the item rows): PI/PR on submit + cancel; MR/PO on every change of a submitted document (`on_change`), which also covers PO Close / Reopen, MR Stop and Update Items
+- **Budget Spent** = Actual (PI items) + Commitment (open PO items × unbilled) + RemOrdPlan (Pending / Partially Ordered MR items × unordered) — all from item rows
 - **WBS Element validate**: Category budget checked against Financial Model allocation
 - **Sub WBS validate**: Hard block if total exceeds parent WBS budget

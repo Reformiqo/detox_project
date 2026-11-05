@@ -30,39 +30,25 @@ frappe.ui.form.on("WBS Element", {
 		if (frm.doc.status === "Active" && !frm.is_new()) {
 			frm.add_custom_button(
 				__("Material Request"),
-				() => {
-					frappe.new_doc("Material Request", {
-						project: frm.doc.project,
-						company: frm.doc.company,
-						custom_request_type: "Material",
-					});
-					// Pre-populate WBS allocation after route
-					frappe.route_options = { _wbs_element: frm.doc.name };
-				},
+				() => wbs_new_material_request(frm, "Material"),
 				__("Create")
 			);
 
 			frm.add_custom_button(
 				__("Service Request"),
-				() => {
-					frappe.new_doc("Material Request", {
-						project: frm.doc.project,
-						company: frm.doc.company,
-						custom_request_type: "Service",
-					});
-					frappe.route_options = { _wbs_element: frm.doc.name };
-				},
+				() => wbs_new_material_request(frm, "Service"),
 				__("Create")
 			);
 
 			frm.add_custom_button(
 				__("Purchase Order"),
 				() => {
+					// purchase_order_custom.js reads the hand-off to default the item WBS.
+					window.__detox_mr_wbs_handoff = { wbs: frm.doc.name, sub_wbs: null };
 					frappe.new_doc("Purchase Order", {
 						project: frm.doc.project,
 						company: frm.doc.company,
 					});
-					frappe.route_options = { _wbs_element: frm.doc.name };
 				},
 				__("Create")
 			);
@@ -121,6 +107,19 @@ frappe.ui.form.on("WBS Element", {
 		}
 	},
 });
+
+// New Material Request for this WBS. material_request_custom.js reads the
+// hand-off to default the item WBS; route_options can't carry it because
+// Frappe clears them before the new form's onload.
+function wbs_new_material_request(frm, request_type) {
+	window.__detox_mr_wbs_handoff = { wbs: frm.doc.name, sub_wbs: null };
+	frappe.new_doc("Material Request", {
+		company: frm.doc.company,
+		project: frm.doc.project,
+		cost_center: frm.doc.cost_center,
+		custom_request_type: request_type,
+	});
+}
 
 function set_category_filter(frm) {
 	frm.set_query("category", () => {
