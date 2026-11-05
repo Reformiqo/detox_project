@@ -623,6 +623,25 @@ def create_custom_fields():
 				module="Detox Project"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
+		# BLANKET ORDER ITEM / SALES ORDER ITEM — Per-item Revenue WBS
+		# no_copy: mapping must not put a Revenue WBS on Delivery Note or Purchase
+		# Order rows; overrides/purchase_wbs.py copies it to the next sales document.
+		# ═══════════════════════════════════════════════════════════════════
+		"Blanket Order Item": [
+			dict(fieldname="custom_wbs_element", fieldtype="Link",
+				label="WBS Element", options="WBS Element", insert_after="rate", no_copy=1),
+			dict(fieldname="custom_sub_wbs_element", fieldtype="Link",
+				label="Sub WBS Element", options="Sub WBS Element",
+				insert_after="custom_wbs_element", no_copy=1),
+		],
+		"Sales Order Item": [
+			dict(fieldname="custom_wbs_element", fieldtype="Link",
+				label="WBS Element", options="WBS Element", insert_after="project", no_copy=1),
+			dict(fieldname="custom_sub_wbs_element", fieldtype="Link",
+				label="Sub WBS Element", options="Sub WBS Element",
+				insert_after="custom_wbs_element", no_copy=1),
+		],
+		# ═══════════════════════════════════════════════════════════════════
 		# MATERIAL REQUEST ITEM — Per-item WBS assignment
 		# ═══════════════════════════════════════════════════════════════════
 		"Material Request Item": [

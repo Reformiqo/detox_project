@@ -26,7 +26,14 @@ SOURCE_ROW_FIELDS = {
 		("po_detail", "Purchase Order Item"),
 		("pr_detail", "Purchase Receipt Item"),
 	],
+	"Sales Invoice": [
+		("sales_invoice_item", "Sales Invoice Item"),
+		("so_detail", "Sales Order Item"),
+	],
 }
+
+# Zero-value sales documents are normal (rate contracts, customer material).
+ZERO_AMOUNT_ALLOWED = ("Blanket Order", "Sales Order", "Sales Invoice")
 
 
 def before_validate(doc, method=None):
@@ -82,6 +89,15 @@ def copy_wbs_from_source_rows(doc):
 
 
 def get_source_row(doctype, item):
+	# A Sales Order row links to its Blanket Order by item code, not by row.
+	if doctype == "Sales Order" and item.get("blanket_order"):
+		return frappe.db.get_value(
+			"Blanket Order Item",
+			{"parent": item.blanket_order, "item_code": item.item_code},
+			["custom_wbs_element", "custom_sub_wbs_element"],
+			as_dict=True,
+		)
+
 	for field, source_doctype in SOURCE_ROW_FIELDS.get(doctype, []):
 		if item.get(field):
 			return frappe.db.get_value(
@@ -125,15 +141,22 @@ def validate_item_wbs(doc):
 					item.idx, item.custom_sub_wbs_element, main_wbs, item.custom_wbs_element))
 
 
-def get_item_wbs_totals(doc):
-	amount_field = "amount" if doc.doctype == "Material Request" else "base_net_amount"
+def get_item_amount(doc, item):
+	if doc.doctype == "Material Request":
+		return flt(item.amount)
+	# Blanket Order Item has no amount field; custom_net_total is also qty x rate.
+	if doc.doctype == "Blanket Order":
+		return flt(item.qty) * flt(item.rate)
+	return flt(item.base_net_amount)
 
+
+def get_item_wbs_totals(doc):
 	totals = {}
 	for item in doc.items:
 		if not item.custom_wbs_element:
 			continue
 		key = (item.custom_wbs_element, item.custom_sub_wbs_element or "")
-		totals[key] = totals.get(key, 0) + flt(item.get(amount_field))
+		totals[key] = totals.get(key, 0) + get_item_amount(doc, item)
 	return totals
 
 
@@ -161,10 +184,16 @@ def validate_wbs_allocations(doc):
 					row.idx, row.wbs_element, row.sub_wbs_element or "-"),
 				title=_("WBS Without Item"),
 			)
-		allocated[key] = allocated.get(key, 0) + flt(row.allocated_amount)
+		if key in allocated:
+			frappe.throw(
+				_("WBS Allocations row {0}: WBS {1} / Sub WBS {2} is entered twice. Keep one row for it.").format(
+					row.idx, row.wbs_element, row.sub_wbs_element or "-"),
+				title=_("Duplicate WBS"),
+			)
+		allocated[key] = flt(row.allocated_amount)
 
 	for (wbs, sub_wbs), item_amount in item_totals.items():
-		if not flt(item_amount, 2):
+		if not flt(item_amount, 2) and doc.doctype not in ZERO_AMOUNT_ALLOWED:
 			frappe.throw(
 				_("WBS {0} has a zero amount. Enter the rate on its item rows.").format(sub_wbs or wbs),
 				title=_("Zero WBS Amount"),
