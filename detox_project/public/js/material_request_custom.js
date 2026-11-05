@@ -3,11 +3,26 @@
 // REQ 1 - Auto-fill WBS Allocations from Sub WBS Element
 // REQ 2 - Roll-up item amounts into WBS Allocation rows
 // REQ 3 - Single WBS auto-assign to all items
+// REQ 4 - Picking a WBS fills an empty Company / Project / Cost Center,
+//         and warns when the WBS belongs to another Project
 // ============================================================
 
 frappe.ui.form.on("Material Request", {
 	onload(frm) {
 		if (!frm.is_new()) return;
+
+		// Opened from a WBS / Sub WBS Element (Create button or dashboard "+").
+		var h = window.__detox_mr_wbs_handoff;
+		window.__detox_mr_wbs_handoff = null;
+		if (h && h.wbs) {
+			var row = frm.add_child("custom_wbs_allocations");
+			row.wbs_element = h.wbs;
+			if (h.sub_wbs) row.sub_wbs_element = h.sub_wbs;
+			frm.refresh_field("custom_wbs_allocations");
+			mr_fill_header_from_wbs(frm, h.wbs, false);
+			return;
+		}
+
 		var route_opts = frappe.route_options || {};
 		var sub_wbs = route_opts.sub_wbs_element || route_opts._wbs_element;
 		if (!sub_wbs) return;
@@ -78,7 +93,12 @@ frappe.ui.form.on("Material Request Item", {
 });
 
 frappe.ui.form.on("WBS Allocation", {
-	wbs_element(frm) { handle_single_wbs_auto_assign(frm); calculate_wbs_allocated_amounts(frm); },
+	wbs_element(frm, cdt, cdn) {
+		var row = locals[cdt][cdn];
+		if (frm.doctype === "Material Request" && row.wbs_element) mr_fill_header_from_wbs(frm, row.wbs_element, true);
+		handle_single_wbs_auto_assign(frm);
+		calculate_wbs_allocated_amounts(frm);
+	},
 	sub_wbs_element(frm) { handle_single_wbs_auto_assign(frm); calculate_wbs_allocated_amounts(frm); },
 	custom_wbs_allocations_remove(frm) { calculate_wbs_allocated_amounts(frm); },
 });
@@ -116,7 +136,7 @@ function calculate_wbs_allocated_amounts(frm) {
 	var map = {};
 	(frm.doc.items || []).forEach(function (item) {
 		var key = (item.custom_wbs_element || "") + "||" + (item.custom_sub_wbs_element || "");
-		map[key] = (map[key] || 0) + flt(item.amount);
+		map[key] = flt((map[key] || 0) + flt(item.amount), 2);
 	});
 
 	allocs.forEach(function (alloc) {
@@ -130,4 +150,26 @@ function calculate_wbs_allocated_amounts(frm) {
 		}
 	});
 	frm.refresh_field("custom_wbs_allocations");
+}
+
+// REQ 4: fill empty header Company / Project / Cost Center from the WBS; never overwrite.
+function mr_fill_header_from_wbs(frm, wbs, warn_mismatch) {
+	if (frm.doc.docstatus !== 0) return;
+	frappe.db.get_value("WBS Element", wbs, ["project", "cost_center", "company"]).then(function (r) {
+		var d = (r && r.message) || {};
+		if (warn_mismatch && d.project && frm.doc.project && d.project !== frm.doc.project) {
+			frappe.show_alert({
+				message: __("WBS {0} belongs to Project {1}, but this Material Request is for Project {2}.", [wbs, d.project, frm.doc.project]),
+				indicator: "orange",
+			});
+			return;
+		}
+		var chain = Promise.resolve();
+		if (d.company && !frm.doc.company) chain = chain.then(function () { return frm.set_value("company", d.company); });
+		if (d.project && !frm.doc.project) chain = chain.then(function () { return frm.set_value("project", d.project); });
+		chain.then(function () {
+			// "Cost center filter in MR" clears cost_center when project changes, so set it last.
+			if (d.cost_center && !frm.doc.cost_center) return frm.set_value("cost_center", d.cost_center);
+		});
+	});
 }

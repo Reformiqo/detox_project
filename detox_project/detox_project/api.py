@@ -364,6 +364,24 @@ def recalculate_all_wbs_budgets(wbs_element=None):
 
 
 @frappe.whitelist()
+def refresh_sub_wbs_spent(sub_wbs):
+	""""Refresh Spent" button on Sub WBS Element: Budget Spent = allocations on submitted Purchase Orders."""
+	frappe.has_permission("Sub WBS Element", "read", sub_wbs, throw=True)
+	rows = frappe.get_all(
+		"WBS Allocation",
+		filters={"sub_wbs_element": sub_wbs, "parenttype": "Purchase Order", "docstatus": 1},
+		fields=["allocated_amount"],
+	)
+	spent = sum(flt(r.allocated_amount) for r in rows)
+	budget = flt(frappe.db.get_value("Sub WBS Element", sub_wbs, "budget_amount"))
+	utilization = (spent / budget * 100) if budget else 0
+
+	frappe.db.set_value("Sub WBS Element", sub_wbs, {"budget_spent": spent, "budget_utilization_pct": utilization})
+
+	return {"spent": spent, "budget": budget, "utilization": utilization, "po_count": len(rows)}
+
+
+@frappe.whitelist()
 def get_budget_utilization(project=None, wbs_element=None):
 	filters = {"status": ["!=", "Cancelled"]}
 	if project:
@@ -572,6 +590,7 @@ def get_fm_categories(doctype, txt, searchfield, start, page_len, filters):
 	If budget_type=CAPEX: categories from FM Project Cost Item (CAPEX tab)
 	If budget_type=OPEX: categories from FM Expense Item (OPEX tab)
 	If blank: categories from both tabs combined
+	Revenue categories are always offered too, for Revenue WBS.
 	"""
 	financial_model = filters.get("financial_model")
 	if not financial_model:
@@ -586,7 +605,7 @@ def get_fm_categories(doctype, txt, searchfield, start, page_len, filters):
 	}
 
 	if budget_type == "CAPEX":
-		return frappe.db.sql("""
+		rows = frappe.db.sql("""
 			SELECT DISTINCT pci.category, pci.category
 			FROM `tabFM Project Cost Item` pci
 			WHERE pci.parent = %(financial_model)s
@@ -597,7 +616,7 @@ def get_fm_categories(doctype, txt, searchfield, start, page_len, filters):
 		""", params)
 
 	elif budget_type == "OPEX":
-		return frappe.db.sql("""
+		rows = frappe.db.sql("""
 			SELECT DISTINCT ei.custom_category, ei.custom_category
 			FROM `tabFM Expense Item` ei
 			WHERE ei.parent = %(financial_model)s
@@ -611,7 +630,7 @@ def get_fm_categories(doctype, txt, searchfield, start, page_len, filters):
 
 	else:
 		# Both CAPEX and OPEX categories
-		return frappe.db.sql("""
+		rows = frappe.db.sql("""
 			SELECT DISTINCT category, category FROM (
 				SELECT pci.category FROM `tabFM Project Cost Item` pci
 				WHERE pci.parent = %(financial_model)s AND pci.parenttype = 'Financial Model'
@@ -625,6 +644,13 @@ def get_fm_categories(doctype, txt, searchfield, start, page_len, filters):
 			ORDER BY category
 			LIMIT %(page_len)s OFFSET %(start)s
 		""", params)
+
+	revenue = frappe.db.sql("""
+		SELECT name, name FROM `tabProject Cost Category`
+		WHERE custom_category_type = 'Revenue' AND enabled = 1 AND name LIKE %(txt)s
+		ORDER BY name
+	""", params)
+	return list(rows) + [r for r in revenue if r not in rows]
 
 
 @frappe.whitelist()

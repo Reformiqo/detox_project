@@ -46,7 +46,11 @@ doctype_js = {
 	"Purchase Order": "public/js/purchase_order_custom.js",
 	"Purchase Invoice": "public/js/purchase_invoice_custom.js",
 	"Purchase Receipt": "public/js/purchase_receipt_custom.js",
-	"Sales Order": "public/js/sales_order_custom.js",
+	"Sales Order": ["public/js/sales_order_custom.js", "public/js/revenue_wbs_allocation.js"],
+	"Sales Invoice": "public/js/revenue_wbs_allocation.js",
+	"Delivery Note": "public/js/revenue_wbs_allocation.js",
+	"Blanket Order": "public/js/revenue_wbs_allocation.js",
+	"Financial Model": "public/js/financial_model.js",
 	"Quotation": "public/js/quotation_custom.js",
 	# ABP2-I419 Phase 1 — Production Plan No-BOM mode client logic.
 	"Production Plan": "public/js/production_plan_custom.js",
