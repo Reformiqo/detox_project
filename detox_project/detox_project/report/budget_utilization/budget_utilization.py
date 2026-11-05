@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.utils import flt
 
 
 def execute(filters=None):
@@ -28,19 +29,11 @@ def get_columns():
 			"width": 150,
 		},
 		{"fieldname": "status", "label": _("Status"), "fieldtype": "Data", "width": 80},
+		{"fieldname": "budget_amount", "label": _("Budget"), "fieldtype": "Currency", "width": 140},
+		{"fieldname": "budget_spent", "label": _("Budget Spent"), "fieldtype": "Currency", "width": 140},
+		{"fieldname": "available", "label": _("Available"), "fieldtype": "Currency", "width": 140},
 		{
-			"fieldname": "material_budget",
-			"label": _("Material Budget"),
-			"fieldtype": "Currency",
-			"width": 130,
-		},
-		{"fieldname": "material_spent", "label": _("Material Spent"), "fieldtype": "Currency", "width": 130},
-		{"fieldname": "service_budget", "label": _("Service Budget"), "fieldtype": "Currency", "width": 130},
-		{"fieldname": "service_spent", "label": _("Service Spent"), "fieldtype": "Currency", "width": 130},
-		{"fieldname": "total_budget", "label": _("Total Budget"), "fieldtype": "Currency", "width": 130},
-		{"fieldname": "total_spent", "label": _("Total Spent"), "fieldtype": "Currency", "width": 130},
-		{
-			"fieldname": "overall_utilization_pct",
+			"fieldname": "budget_utilization_pct",
 			"label": _("Utilization %"),
 			"fieldtype": "Percent",
 			"width": 100,
@@ -57,7 +50,7 @@ def get_data(filters):
 	if filters and filters.get("status"):
 		conditions["status"] = filters["status"]
 
-	return frappe.get_all(
+	data = frappe.get_all(
 		"WBS Element",
 		filters=conditions,
 		fields=[
@@ -66,16 +59,15 @@ def get_data(filters):
 			"wbs_type",
 			"project",
 			"status",
-			"material_budget",
-			"material_spent",
-			"service_budget",
-			"service_spent",
-			"total_budget",
-			"total_spent",
-			"overall_utilization_pct",
+			"budget_amount",
+			"budget_spent",
+			"budget_utilization_pct",
 		],
 		order_by="project, creation",
 	)
+	for row in data:
+		row.available = flt(row.budget_amount) - flt(row.budget_spent)
+	return data
 
 
 def get_chart(data):
@@ -86,8 +78,8 @@ def get_chart(data):
 		"data": {
 			"labels": labels,
 			"datasets": [
-				{"name": _("Budget"), "values": [d.total_budget or 0 for d in data[:20]]},
-				{"name": _("Spent"), "values": [d.total_spent or 0 for d in data[:20]]},
+				{"name": _("Budget"), "values": [d.budget_amount or 0 for d in data[:20]]},
+				{"name": _("Spent"), "values": [d.budget_spent or 0 for d in data[:20]]},
 			],
 		},
 		"type": "bar",

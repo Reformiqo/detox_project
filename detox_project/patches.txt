@@ -8,3 +8,4 @@ detox_project.patches.remove_custom_wbs_connections
 detox_project.patches.refresh_all_wbs_budget_spent
 detox_project.patches.link_sales_invoice_revenue_wbs
 detox_project.patches.disable_wbs_server_scripts
+detox_project.patches.disable_wbs_client_scripts
