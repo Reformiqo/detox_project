@@ -1,8 +1,7 @@
 // ============================================================
 // CLIENT SCRIPT  |  Doctype: Material Request
-// WBS / Sub WBS are picked on the item rows only. The WBS Allocations
-// table is read-only and rebuilt from the items on save
-// (overrides/purchase_wbs.py).
+// The WBS Allocations table is validated against the item rows on save,
+// and filled from them when empty (overrides/purchase_wbs.py).
 //
 // REQ 1 - New MR opened from a WBS / Sub WBS Element: that WBS becomes
 //         the default for every item row.

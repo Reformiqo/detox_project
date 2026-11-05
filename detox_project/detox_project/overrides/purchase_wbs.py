@@ -1,10 +1,9 @@
 """WBS on Material Request / Purchase Order / Purchase Receipt / Purchase Invoice.
 
-The item rows (custom_wbs_element / custom_sub_wbs_element) are the only place
-a user picks a WBS. The header table custom_wbs_allocations is read-only and is
-rebuilt from the items on every save: one row per (WBS, Sub WBS), amount =
-sum of item base_net_amount, in company currency like the budget
-(Material Request: amount).
+The header table custom_wbs_allocations must hold one row per (WBS, Sub WBS) on
+the item rows, amount = sum of item base_net_amount, in company currency like
+the budget (Material Request: amount). Rows entered by hand are validated
+against the items; an empty table is filled from the items.
 
 Item WBS is copied down the chain MR item -> PO item -> PR item -> PI item.
 """
@@ -32,15 +31,18 @@ SOURCE_ROW_FIELDS = {
 
 def before_validate(doc, method=None):
 	copy_wbs_from_source_rows(doc)
-	# Built here as well so the other apps' validate hooks (closed-WBS guard)
-	# already see the right WBS rows.
-	rebuild_wbs_allocations(doc)
+	doc.flags.fill_wbs_allocations = not doc.get(TABLE)
+	# Filled here as well so the other apps' validate hooks (closed-WBS guard)
+	# already see the WBS rows.
+	if doc.flags.fill_wbs_allocations:
+		rebuild_wbs_allocations(doc)
 
 
 def validate(doc, method=None):
 	validate_item_wbs(doc)
-	# Rebuilt again: net_amount is final only after ERPNext's own validate.
-	rebuild_wbs_allocations(doc)
+	# Filled again: net_amount is final only after ERPNext's own validate.
+	if doc.flags.fill_wbs_allocations:
+		rebuild_wbs_allocations(doc)
 	validate_wbs_allocations(doc)
 
 
@@ -123,7 +125,7 @@ def validate_item_wbs(doc):
 					item.idx, item.custom_sub_wbs_element, main_wbs, item.custom_wbs_element))
 
 
-def rebuild_wbs_allocations(doc):
+def get_item_wbs_totals(doc):
 	amount_field = "amount" if doc.doctype == "Material Request" else "base_net_amount"
 
 	totals = {}
@@ -132,9 +134,12 @@ def rebuild_wbs_allocations(doc):
 			continue
 		key = (item.custom_wbs_element, item.custom_sub_wbs_element or "")
 		totals[key] = totals.get(key, 0) + flt(item.get(amount_field))
+	return totals
 
+
+def rebuild_wbs_allocations(doc):
 	doc.set(TABLE, [])
-	for (wbs, sub_wbs), amount in totals.items():
+	for (wbs, sub_wbs), amount in get_item_wbs_totals(doc).items():
 		doc.append(TABLE, {
 			"wbs_element": wbs,
 			"sub_wbs_element": sub_wbs,
@@ -143,10 +148,37 @@ def rebuild_wbs_allocations(doc):
 
 
 def validate_wbs_allocations(doc):
+	"""Keep the WBS Allocations table and the item rows consistent."""
+	item_totals = get_item_wbs_totals(doc)
+
+	allocated = {}
 	for row in doc.get(TABLE):
-		if not row.allocated_amount:
+		key = (row.wbs_element, row.sub_wbs_element or "")
+		if key not in item_totals:
 			frappe.throw(
-				_("WBS {0} has a zero amount. Enter the rate on its item rows.").format(
-					row.sub_wbs_element or row.wbs_element),
+				_("WBS Allocations row {0}: no item has WBS {1} / Sub WBS {2}. "
+					"Set it on an item row or remove this row.").format(
+					row.idx, row.wbs_element, row.sub_wbs_element or "-"),
+				title=_("WBS Without Item"),
+			)
+		allocated[key] = allocated.get(key, 0) + flt(row.allocated_amount)
+
+	for (wbs, sub_wbs), item_amount in item_totals.items():
+		if not flt(item_amount, 2):
+			frappe.throw(
+				_("WBS {0} has a zero amount. Enter the rate on its item rows.").format(sub_wbs or wbs),
 				title=_("Zero WBS Amount"),
+			)
+		if (wbs, sub_wbs) not in allocated:
+			frappe.throw(
+				_("Item rows have WBS {0} / Sub WBS {1}, but WBS Allocations has no row for it.").format(
+					wbs, sub_wbs or "-"),
+				title=_("WBS Mismatch"),
+			)
+		if flt(allocated[(wbs, sub_wbs)], 2) != flt(item_amount, 2):
+			frappe.throw(
+				_("WBS {0} / Sub WBS {1}: Allocated Amount {2} does not match the item amount {3}. "
+					"Correct the amount, or clear the WBS Allocations table to fill it from the items.").format(
+					wbs, sub_wbs or "-", flt(allocated[(wbs, sub_wbs)], 2), flt(item_amount, 2)),
+				title=_("WBS Mismatch"),
 			)

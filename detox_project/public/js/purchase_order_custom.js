@@ -1,6 +1,5 @@
-// WBS / Sub WBS are picked on the item rows only. The WBS Allocations
-// table is read-only and rebuilt from the items on save
-// (overrides/purchase_wbs.py).
+// The WBS Allocations table is validated against the item rows on save,
+// and filled from them when empty (overrides/purchase_wbs.py).
 
 frappe.ui.form.on("Purchase Order", {
 	onload(frm) {

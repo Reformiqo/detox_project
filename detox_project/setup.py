@@ -607,10 +607,10 @@ def create_custom_fields():
 				module="Detox Project"),
 			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
 				label="WBS Allocations", insert_after="custom_financial_model"),
-			# Read-only + no_copy: rebuilt from the item WBS (overrides/purchase_wbs.py),
-			# so it must not be carried over when this document is mapped from another.
+			# no_copy: a mapped document fills it from its own items (overrides/purchase_wbs.py).
+			# read_only=0 is explicit because update only overwrites the keys passed here.
 			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
-				label="WBS Allocations", options="WBS Allocation", read_only=1, no_copy=1,
+				label="WBS Allocations", options="WBS Allocation", read_only=0, no_copy=1,
 				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
@@ -638,10 +638,10 @@ def create_custom_fields():
 		"Purchase Order": [
 			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
 				label="WBS Allocations", insert_after="project"),
-			# Read-only + no_copy: rebuilt from the item WBS (overrides/purchase_wbs.py),
-			# so it must not be carried over when this document is mapped from another.
+			# no_copy: a mapped document fills it from its own items (overrides/purchase_wbs.py).
+			# read_only=0 is explicit because update only overwrites the keys passed here.
 			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
-				label="WBS Allocations", options="WBS Allocation", read_only=1, no_copy=1,
+				label="WBS Allocations", options="WBS Allocation", read_only=0, no_copy=1,
 				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
@@ -660,10 +660,10 @@ def create_custom_fields():
 		"Purchase Invoice": [
 			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
 				label="WBS Allocations", insert_after="project"),
-			# Read-only + no_copy: rebuilt from the item WBS (overrides/purchase_wbs.py),
-			# so it must not be carried over when this document is mapped from another.
+			# no_copy: a mapped document fills it from its own items (overrides/purchase_wbs.py).
+			# read_only=0 is explicit because update only overwrites the keys passed here.
 			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
-				label="WBS Allocations", options="WBS Allocation", read_only=1, no_copy=1,
+				label="WBS Allocations", options="WBS Allocation", read_only=0, no_copy=1,
 				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════
@@ -682,10 +682,10 @@ def create_custom_fields():
 		"Purchase Receipt": [
 			dict(fieldname="custom_wbs_allocations_section", fieldtype="Section Break",
 				label="WBS Allocations", insert_after="project"),
-			# Read-only + no_copy: rebuilt from the item WBS (overrides/purchase_wbs.py),
-			# so it must not be carried over when this document is mapped from another.
+			# no_copy: a mapped document fills it from its own items (overrides/purchase_wbs.py).
+			# read_only=0 is explicit because update only overwrites the keys passed here.
 			dict(fieldname="custom_wbs_allocations", fieldtype="Table",
-				label="WBS Allocations", options="WBS Allocation", read_only=1, no_copy=1,
+				label="WBS Allocations", options="WBS Allocation", read_only=0, no_copy=1,
 				insert_after="custom_wbs_allocations_section"),
 		],
 		# ═══════════════════════════════════════════════════════════════════

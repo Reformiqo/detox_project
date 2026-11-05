@@ -29,9 +29,9 @@ Managed via `setup.py` → `create_custom_fields()`:
 
 ## WBS on MR / PO / PR / PI (overrides/purchase_wbs.py)
 
-- Users pick WBS / Sub WBS on the **item rows only**. `custom_wbs_allocations` is read-only, not copied when a document is mapped (`no_copy`), and rebuilt from the items on every save (one row per WBS + Sub WBS, amount = Σ base_net_amount in company currency; MR: amount).
+- `custom_wbs_allocations` can be edited by hand and is not copied when a document is mapped (`no_copy`). It must hold one row per WBS + Sub WBS on the items, amount = Σ base_net_amount in company currency (MR: amount). An empty table is filled from the items on save; a filled one is validated, not overwritten. Update Items on a submitted PO rebuilds it.
 - Blank item WBS is copied from the source row (MR item → PO item → PR item → PI item); a row whose WBS differs from its source row is blocked.
-- Blocked: some rows with a WBS and some without, Sub WBS of another WBS, WBS of another project, ₹0 WBS amount.
+- Blocked: some rows with a WBS and some without, Sub WBS of another WBS, WBS of another project, ₹0 WBS amount, a header row with no matching item, an item WBS with no header row, a header amount that differs from its items.
 
 ## Budget validation flow
 
