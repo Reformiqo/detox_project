@@ -172,16 +172,17 @@ def _uses_item_wbs(doc):
 	return not any(_source_of(doc, item)[1] for item in doc.items)
 
 
-def _check_blanket_order_has_allocation(doc, project, base):
-	"""Mandatory on a Selling Blanket Order once the project has an active Revenue WBS."""
-	if doc.doctype != "Blanket Order" or doc.get(TABLE):
+def _check_has_allocation(doc):
+	"""WBS is mandatory on Selling Blanket Order, Sales Order, Delivery Note and Sales Invoice."""
+	if doc.get(TABLE):
 		return
-	if doc.get("blanket_order_type") == "Selling" and project and base:
-		if frappe.db.exists("WBS Element", {"project": project, "custom_category_type": "Revenue", "status": ["!=", "Cancelled"]}):
-			frappe.throw(
-				f"Revenue WBS Allocation is mandatory on a Selling Blanket Order for project {project}. Please add at least one row in the Revenue WBS Allocations table.",
-				title="Revenue WBS Allocation Required",
-			)
+	if doc.doctype == "Blanket Order" and doc.get("blanket_order_type") != "Selling":
+		return
+	if doc.doctype in ITEM_WBS_DOCTYPES:
+		message = f"WBS Element is mandatory on {doc.doctype}. Please set the WBS Element on the item rows."
+	else:
+		message = f"WBS Element is mandatory on {doc.doctype}. Please add at least one row in the WBS Allocations table."
+	frappe.throw(message, title="WBS Element Required")
 
 
 def validate_allocations(doc, method=None):
@@ -195,14 +196,14 @@ def validate_allocations(doc, method=None):
 		if doc.flags.fill_wbs_allocations:
 			rebuild_wbs_allocations(doc)
 		validate_wbs_allocations(doc)
-		_check_blanket_order_has_allocation(doc, project, base)
-		if doc.get(TABLE):
-			_validate_rows(doc, doc.get(TABLE), project)
+		_check_has_allocation(doc)
+		_validate_rows(doc, doc.get(TABLE), project)
 		return
 
 	if not doc.get(TABLE):
 		_copy_from_sources(doc)
 
+	_check_has_allocation(doc)
 	allocs = doc.get(TABLE) or []
 	if allocs:
 		_sync_amounts(allocs, base)
