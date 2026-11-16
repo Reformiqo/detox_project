@@ -43,14 +43,19 @@ frappe.ui.form.on("Sub WBS Element", {
 
 		sub_wbs_revenue_dashboard(frm);
 
-		// Dashboard "+" on Material Request opens the MR prefilled from this Sub WBS.
+		// Dashboard "+" opens the document prefilled from this Sub WBS.
 		frm.make_methods = frm.make_methods || {};
-		frm.make_methods["Material Request"] = () => sub_wbs_new_material_request(frm);
+		[
+			"Material Request", "Purchase Order", "Purchase Receipt", "Purchase Invoice",
+			"Blanket Order", "Sales Order", "Delivery Note", "Sales Invoice",
+		].forEach((doctype) => {
+			frm.make_methods[doctype] = () => sub_wbs_new_linked_doc(frm, doctype);
+		});
 
 		if (frm.doc.status === "Active" && !frm.is_new()) {
 			frm.add_custom_button(
 				__("Material Request"),
-				() => sub_wbs_new_material_request(frm),
+				() => sub_wbs_new_linked_doc(frm, "Material Request"),
 				__("Create")
 			);
 		}
@@ -115,12 +120,14 @@ frappe.ui.form.on("Sub WBS Element", {
 	},
 });
 
-// New Material Request for this Sub WBS (see wbs_new_material_request in wbs_element.js).
-function sub_wbs_new_material_request(frm) {
+// New purchase or sales document for this Sub WBS (see wbs_new_linked_doc in wbs_element.js).
+function sub_wbs_new_linked_doc(frm, doctype) {
 	window.__detox_mr_wbs_handoff = { wbs: frm.doc.main_wbs_element, sub_wbs: frm.doc.name };
 	frappe.db.get_value("WBS Element", frm.doc.main_wbs_element, ["company", "project", "cost_center"]).then((r) => {
 		const d = (r && r.message) || {};
-		frappe.new_doc("Material Request", { company: d.company, project: d.project, cost_center: d.cost_center });
+		const values = { company: d.company, project: d.project, cost_center: d.cost_center };
+		if (doctype === "Blanket Order") values.blanket_order_type = "Selling";
+		frappe.new_doc(doctype, values);
 	});
 }
 

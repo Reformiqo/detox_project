@@ -1,25 +1,28 @@
+// Item WBS is copied from the PO row on save. The WBS Allocations table is
+// validated against the item rows, and filled from them when empty
+// (overrides/purchase_wbs.py). Table to item copy and amount sync: wbs_allocation_sync.js.
+
 frappe.ui.form.on("Purchase Receipt", {
+	onload(frm) {
+		wbs_apply_handoff(frm);
+	},
+
 	refresh(frm) {
-		frm.set_query("wbs_element", "custom_wbs_allocations", () => {
-			let filters = { status: "Active" };
-			if (frm.doc.project) filters.project = frm.doc.project;
-			return { filters };
-		});
-
-		frm.set_query("sub_wbs_element", "custom_wbs_allocations", (frm, cdt, cdn) => {
-			let row = locals[cdt][cdn];
-			let filters = { status: "Active" };
-			if (row.wbs_element) filters.main_wbs_element = row.wbs_element;
-			return { filters };
-		});
+		set_item_wbs_queries(frm);
 	},
 });
 
-frappe.ui.form.on("WBS Allocation", {
-	wbs_element(frm, cdt, cdn) {
+function set_item_wbs_queries(frm) {
+	frm.set_query("custom_wbs_element", "items", (doc, cdt, cdn) => {
 		let row = locals[cdt][cdn];
-		if (row.wbs_element) {
-			frappe.model.set_value(cdt, cdn, "sub_wbs_element", "");
-		}
-	},
-});
+		let filters = { status: "Active" };
+		if (row.project || frm.doc.project) filters.project = row.project || frm.doc.project;
+		return { filters };
+	});
+	frm.set_query("custom_sub_wbs_element", "items", (doc, cdt, cdn) => {
+		let row = locals[cdt][cdn];
+		let filters = { status: "Active" };
+		if (row.custom_wbs_element) filters.main_wbs_element = row.custom_wbs_element;
+		return { filters };
+	});
+}

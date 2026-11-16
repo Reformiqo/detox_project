@@ -28,9 +28,15 @@ frappe.ui.form.on("WBS Element", {
 		_abp2_i416_setup_budget_buttons(frm);
 		wbs_revenue_dashboard(frm);
 
-		// Dashboard "+" on Material Request opens the MR prefilled from this WBS.
+		// Dashboard "+" opens the document prefilled from this WBS.
 		frm.make_methods = frm.make_methods || {};
 		frm.make_methods["Material Request"] = () => wbs_new_material_request(frm, "Material");
+		[
+			"Purchase Order", "Purchase Receipt", "Purchase Invoice",
+			"Blanket Order", "Sales Order", "Delivery Note", "Sales Invoice",
+		].forEach((doctype) => {
+			frm.make_methods[doctype] = () => wbs_new_linked_doc(frm, doctype);
+		});
 
 		if (frm.doc.status === "Active" && !frm.is_new()) {
 			frm.add_custom_button(
@@ -47,13 +53,7 @@ frappe.ui.form.on("WBS Element", {
 
 			frm.add_custom_button(
 				__("Purchase Order"),
-				() => {
-					frappe.new_doc("Purchase Order", {
-						project: frm.doc.project,
-						company: frm.doc.company,
-					});
-					frappe.route_options = { _wbs_element: frm.doc.name };
-				},
+				() => wbs_new_linked_doc(frm, "Purchase Order"),
 				__("Create")
 			);
 
@@ -113,8 +113,8 @@ frappe.ui.form.on("WBS Element", {
 });
 
 // New Material Request for this WBS. material_request_custom.js reads the
-// hand-off to add the allocation row; route_options can't carry it because
-// Frappe clears them before the new form's onload.
+// hand-off to add the WBS; route_options can't carry it because Frappe clears
+// them before the new form's onload.
 function wbs_new_material_request(frm, request_type) {
 	window.__detox_mr_wbs_handoff = { wbs: frm.doc.name, sub_wbs: null };
 	frappe.new_doc("Material Request", {
@@ -123,6 +123,15 @@ function wbs_new_material_request(frm, request_type) {
 		cost_center: frm.doc.cost_center,
 		custom_request_type: request_type,
 	});
+}
+
+// New PO / PR / PI / sales document for this WBS. wbs_allocation_sync.js reads
+// the hand-off to add the WBS to the table and the first item.
+function wbs_new_linked_doc(frm, doctype) {
+	window.__detox_mr_wbs_handoff = { wbs: frm.doc.name, sub_wbs: null };
+	const values = { company: frm.doc.company, project: frm.doc.project, cost_center: frm.doc.cost_center };
+	if (doctype === "Blanket Order") values.blanket_order_type = "Selling";
+	frappe.new_doc(doctype, values);
 }
 
 // Revenue WBS: show the Sales connections and Revenue Achieved %.

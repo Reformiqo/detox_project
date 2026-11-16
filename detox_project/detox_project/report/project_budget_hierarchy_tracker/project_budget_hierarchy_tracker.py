@@ -6,28 +6,19 @@ hierarchy from the attached FRD:
 
   Budget   |  Actual  |  Commitment  |  RemOrdPlan  |  Assigned  |  Available  |  Utilization %
 
-Definitions (from FRD "Field Logic" tab):
-  • Actual       = Σ GL Entry (debit − credit), docstatus = 1,
-                   project = report project, voucher in PI/JE/SE,
-                   cost_center = WBS.cost_center.
-  • Commitment   = Σ over POs linked to this WBS, of
-                   (allocated_amount × open_fraction)
-                   where open_fraction = max(0, (PO total excl. GST − Σ billed_amt) / PO total excl. GST)
-                   and PO is docstatus=1, status NOT in
-                   (Completed, Closed, Cancelled, Delivered).
-  • RemOrdPlan   = Σ over MRs linked to this WBS, same shape with
-                   (allocated_amount × outstanding_fraction)
-                   where outstanding_fraction =
-                   max(0, (MR total − value ordered on submitted POs) / MR total)
-                   and MR is docstatus=1, status in
+Definitions (all read from the item rows' custom_wbs_element /
+custom_sub_wbs_element — the WBS Allocation header is only a summary):
+  • Actual       = Σ base_net_amount of submitted Purchase Invoice items,
+                   with or without a Purchase Order.
+  • Commitment   = Σ over submitted Purchase Order items, of
+                   base_net_amount × (1 − billed_amt / amount), for POs
+                   NOT in (Completed, Closed, Cancelled, Delivered).
+  • RemOrdPlan   = Σ over submitted Material Request items, of
+                   amount × not-yet-ordered fraction, for MRs in
                    (Pending, Partially Ordered).
   • Assigned     = Actual + Commitment + RemOrdPlan (derived).
   • Available    = Budget − Assigned (derived).
   • Utilization% = Assigned / Budget × 100 (derived).
-
-WBS → linked-doc mapping uses the existing `WBS Allocation` child
-table on MR / PO / PR / PI (fieldname `custom_wbs_allocations`),
-which carries `wbs_element`, `sub_wbs_element`, `allocated_amount`.
 """
 import frappe
 from frappe import _
@@ -80,20 +71,20 @@ def get_columns():
 # ────────────────────────────────────────────────────────────────────
 
 
+def _item_wbs_condition(alias, wbs_element, sub_wbs_element):
+    """WHERE clause on an item table's WBS fields. A WBS without a Sub WBS
+    matches all its item rows, so it rolls up its Sub WBS."""
+    condition = f"{alias}.custom_wbs_element = %s"
+    args = [wbs_element]
+    if sub_wbs_element:
+        condition += f" AND {alias}.custom_sub_wbs_element = %s"
+        args.append(sub_wbs_element)
+    return condition, args
+
+
 def _compute_actual(project, cost_center, wbs_element=None, sub_wbs_element=None):
-    """Actual for a WBS = billed portion of every PO allocated to it,
-    PLUS every standalone PI (no source PO) allocated to it.
-
-    Mirrors _compute_commitment's shape: for each PO carrying a WBS
-    Allocation, split the allocated share by billed_fraction. Together
-    Commitment (open) + Actual (billed) sum to the WBS's total PO
-    allocation — no double count.
-
-    ABP2-I439 #3 (Sahil 2026-07-01): the original impl joined GL Entry
-    on (project, cost_center) but most WBS Elements on SEPPL have no
-    cost_center on the master, so every Actual came out ₹0.00.
-    Also GL Entry doesn't carry the WBS dimension — mapping GL back
-    to a WBS needs the WBS Allocation table anyway.
+    """Actual for a WBS = Σ net amount of submitted Purchase Invoice item
+    rows carrying this WBS — with or without a Purchase Order.
 
     Legacy signature (project, cost_center only) preserved via GL
     fallback so old callers don't crash.
@@ -115,170 +106,71 @@ def _compute_actual(project, cost_center, wbs_element=None, sub_wbs_element=None
         )
         return flt(row[0][0]) if row else 0.0
 
-    # --- PO billed portion (mirrors Commitment's open-portion pattern) ---
-    # WBS row (no sub) matches all its allocations, so it rolls up its Sub WBS.
-    where_wbs = "wa.wbs_element = %s"
-    args = [wbs_element]
-    if sub_wbs_element:
-        where_wbs += " AND wa.sub_wbs_element = %s"
-        args.append(sub_wbs_element)
-
-    po_rows = frappe.db.sql(
+    condition, args = _item_wbs_condition("pii", wbs_element, sub_wbs_element)
+    row = frappe.db.sql(
         f"""
-        SELECT po.name,
-               po.total,
-               COALESCE((
-                   SELECT SUM(poi.billed_amt)
-                   FROM `tabPurchase Order Item` poi
-                   WHERE poi.parent = po.name
-               ), 0) AS billed,
-               wa.allocated_amount
-        FROM `tabWBS Allocation` wa
-        INNER JOIN `tabPurchase Order` po ON po.name = wa.parent
-        WHERE wa.parenttype = 'Purchase Order'
-          AND po.docstatus = 1
-          AND po.status != 'Cancelled'
-          AND {where_wbs}
-        """,
-        tuple(args),
-        as_dict=True,
-    )
-    total = 0.0
-    for r in po_rows:
-        po_total = flt(r.total)
-        billed = flt(r.billed)
-        if po_total <= 0:
-            continue
-        billed_fraction = min(1.0, max(0.0, billed / po_total))
-        total += flt(r.allocated_amount) * billed_fraction
-
-    # --- Plus standalone PIs (no source PO) allocated to this WBS ---
-    # A PI is standalone if NO row on its Purchase Invoice Item has a
-    # purchase_order value. Those PIs never contributed to any PO's
-    # Commitment/Actual split, so we count their full allocated amount.
-    standalone_pi = frappe.db.sql(
-        f"""
-        SELECT COALESCE(SUM(wa.allocated_amount), 0)
-        FROM `tabWBS Allocation` wa
-        INNER JOIN `tabPurchase Invoice` pi ON pi.name = wa.parent
-        WHERE wa.parenttype = 'Purchase Invoice'
-          AND pi.docstatus = 1
-          AND NOT EXISTS (
-              SELECT 1
-              FROM `tabPurchase Invoice Item` pii
-              WHERE pii.parent = pi.name
-                AND pii.purchase_order IS NOT NULL
-                AND pii.purchase_order != ''
-          )
-          AND {where_wbs}
+        SELECT COALESCE(SUM(pii.base_net_amount), 0)
+        FROM `tabPurchase Invoice Item` pii
+        INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+        WHERE pi.docstatus = 1
+          AND {condition}
         """,
         tuple(args),
     )
-    total += flt(standalone_pi[0][0]) if standalone_pi else 0.0
-
-    return total
+    return flt(row[0][0])
 
 
 def _compute_commitment(wbs_element, sub_wbs_element=None):
-    """Commitment for a WBS = Σ over POs allocated to it, of
-    (allocated_amount × open_fraction).
-
-    Open fraction is computed at PO level so partial billing on a
-    multi-WBS PO is split proportionally — every WBS getting a share
-    of the PO sees its share of the unbilled portion.
+    """Commitment for a WBS = Σ over open submitted Purchase Order item
+    rows carrying this WBS, of net amount × unbilled fraction of the row.
+    The billed part is in Actual through the Purchase Invoice rows.
     """
-    where_wbs = "wa.wbs_element = %s"
-    args = [wbs_element]
-    if sub_wbs_element:
-        where_wbs += " AND wa.sub_wbs_element = %s"
-        args.append(sub_wbs_element)
-
-    rows = frappe.db.sql(
+    condition, args = _item_wbs_condition("poi", wbs_element, sub_wbs_element)
+    row = frappe.db.sql(
         f"""
-        SELECT po.name,
-               po.total,
-               COALESCE((
-                   SELECT SUM(poi.billed_amt)
-                   FROM `tabPurchase Order Item` poi
-                   WHERE poi.parent = po.name
-               ), 0) AS billed,
-               wa.allocated_amount
-        FROM `tabWBS Allocation` wa
-        INNER JOIN `tabPurchase Order` po ON po.name = wa.parent
-        WHERE wa.parenttype = 'Purchase Order'
-          AND po.docstatus = 1
-          AND po.status NOT IN ('Completed', 'Closed', 'Cancelled',
-                                'Delivered')
-          AND {where_wbs}
+        SELECT COALESCE(SUM(
+            poi.base_net_amount * GREATEST(0, 1 - poi.billed_amt / poi.amount)
+        ), 0)
+        FROM `tabPurchase Order Item` poi
+        INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
+        WHERE po.docstatus = 1
+          AND po.status NOT IN ('Completed', 'Closed', 'Cancelled', 'Delivered')
+          AND poi.amount > 0
+          AND {condition}
         """,
         tuple(args),
-        as_dict=True,
     )
-    total = 0.0
-    for r in rows:
-        po_total = flt(r.total)
-        billed = flt(r.billed)
-        if po_total <= 0:
-            continue
-        open_fraction = max(0.0, (po_total - billed) / po_total)
-        total += flt(r.allocated_amount) * open_fraction
-    return total
+    return flt(row[0][0])
 
 
 def _compute_rem_ord_plan(wbs_element, sub_wbs_element=None):
-    """RemOrdPlan for a WBS = Σ over MRs allocated to it, of
-    (allocated_amount × outstanding_fraction).
+    """RemOrdPlan for a WBS = Σ over open submitted Material Request item
+    rows carrying this WBS, of amount × not-yet-ordered fraction of the row.
 
-    Outstanding fraction = (MR total − ordered value) / MR total, floored at 0.
-    Ordered value is read from the submitted PO items linked to each MR item,
-    not from MR Item.ordered_qty — ERPNext leaves that stale on some MRs,
-    which kept the MR counted on top of its PO (double count).
+    Only Pending / Partially Ordered MRs count, so Stopped and Closed MRs
+    are left out. Ordered qty is read from the submitted PO items linked to
+    each MR item, not from MR Item.ordered_qty — ERPNext leaves that stale
+    on some MRs, which kept the MR counted on top of its PO (double count).
     """
-    where_wbs = "wa.wbs_element = %s"
-    args = [wbs_element]
-    if sub_wbs_element:
-        where_wbs += " AND wa.sub_wbs_element = %s"
-        args.append(sub_wbs_element)
-
-    rows = frappe.db.sql(
+    condition, args = _item_wbs_condition("mri", wbs_element, sub_wbs_element)
+    row = frappe.db.sql(
         f"""
-        SELECT mr.name,
-               COALESCE((
-                   SELECT SUM(mri.amount)
-                   FROM `tabMaterial Request Item` mri
-                   WHERE mri.parent = mr.name
-               ), 0) AS mr_total,
-               COALESCE((
-                   SELECT SUM(mri.amount * LEAST(1, COALESCE((
-                       SELECT SUM(poi.stock_qty)
-                       FROM `tabPurchase Order Item` poi
-                       WHERE poi.material_request_item = mri.name
-                         AND poi.docstatus = 1
-                   ), 0) / mri.stock_qty))
-                   FROM `tabMaterial Request Item` mri
-                   WHERE mri.parent = mr.name
-                     AND mri.stock_qty > 0
-               ), 0) AS ordered,
-               wa.allocated_amount
-        FROM `tabWBS Allocation` wa
-        INNER JOIN `tabMaterial Request` mr ON mr.name = wa.parent
-        WHERE wa.parenttype = 'Material Request'
-          AND mr.docstatus = 1
+        SELECT COALESCE(SUM(mri.amount * (1 - LEAST(1, COALESCE((
+            SELECT SUM(poi.stock_qty)
+            FROM `tabPurchase Order Item` poi
+            WHERE poi.material_request_item = mri.name
+              AND poi.docstatus = 1
+        ), 0) / mri.stock_qty))), 0)
+        FROM `tabMaterial Request Item` mri
+        INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
+        WHERE mr.docstatus = 1
           AND mr.status IN ('Pending', 'Partially Ordered')
-          AND {where_wbs}
+          AND mri.stock_qty > 0
+          AND {condition}
         """,
         tuple(args),
-        as_dict=True,
     )
-    total = 0.0
-    for r in rows:
-        mr_total = flt(r.mr_total)
-        ordered = flt(r.ordered)
-        if mr_total <= 0:
-            continue
-        outstanding_fraction = max(0.0, (mr_total - ordered) / mr_total)
-        total += flt(r.allocated_amount) * outstanding_fraction
-    return total
+    return flt(row[0][0])
 
 
 def _derive(budget, actual, commitment, rem_ord_plan):
