@@ -156,6 +156,7 @@ doc_events = {
 	},
 	# ABP2-I419 Phase 6 — Cylinder Deposit Ledger auto-create on DN / SI submit.
 	"Delivery Note": {
+		"before_validate": "detox_project.detox_project.overrides.revenue_wbs.delivery_note_before_validate",
 		"validate": "detox_project.detox_project.overrides.revenue_wbs.validate_allocations",
 		"on_submit": "detox_project.detox_project.doctype.cylinder_deposit_ledger.cylinder_deposit_ledger.auto_create_deposit_entries",
 	},

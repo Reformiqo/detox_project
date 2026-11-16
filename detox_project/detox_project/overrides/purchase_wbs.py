@@ -30,6 +30,11 @@ SOURCE_ROW_FIELDS = {
 		("sales_invoice_item", "Sales Invoice Item"),
 		("so_detail", "Sales Order Item"),
 	],
+	# A return carries the WBS of the delivery it reverses, so dn_detail wins.
+	"Delivery Note": [
+		("dn_detail", "Delivery Note Item"),
+		("so_detail", "Sales Order Item"),
+	],
 }
 
 # Zero-value sales documents are normal (rate contracts, customer material).

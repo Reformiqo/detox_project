@@ -174,6 +174,23 @@ def before_validate(doc, method=None):
 	purchase_wbs.before_validate(doc)
 
 
+def delivery_note_before_validate(doc, method=None):
+	"""Delivery Note: carry the item WBS down from the Sales Order row.
+
+	On a Delivery Note the item WBS is the stock dimension -- it decides
+	which WBS the stock is issued from, and the Inventory Dimension
+	validates it against that WBS's balance. Leaving it blank sends the
+	issue to the unassigned bucket, which is what put the Bhopal RDF
+	deliveries outside their WBS (seppl.patches.move_unsh_rdf_sales_cycle_wbs).
+
+	The allocation table is not touched here: a Delivery Note is not in
+	ITEM_WBS_DOCTYPES, so validate_allocations keeps filling it from the
+	source document as before.
+	"""
+	copy_wbs_from_source_rows(doc)
+	_copy_wbs_from_source_table(doc)
+
+
 def _copy_wbs_from_source_table(doc):
 	"""An item whose source row has no WBS takes it from the source document's
 	table, when that table has a single WBS row (older documents kept the WBS
