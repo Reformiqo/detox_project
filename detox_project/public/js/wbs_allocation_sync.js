@@ -92,12 +92,54 @@ function wbs_sync_amounts_delayed(frm) {
 	setTimeout(() => frappe.after_ajax(() => wbs_sync_amounts(frm)), 300);
 }
 
+// A new Sales Order / Sales Invoice made from a Blanket Order or Sales Order:
+// show the item WBS and the WBS table it gets on save (overrides/revenue_wbs.py).
+function wbs_fill_new_sales_form(frm) {
+	if (!frm.is_new() || frm.wbs_filled) return;
+	if (frm.doctype !== "Sales Order" && frm.doctype !== "Sales Invoice") return;
+	const items = frm.doc.items || [];
+	const from_source = items.some((i) => i.blanket_order || i.so_detail || i.sales_order);
+	if (!from_source || items.some((i) => i.custom_wbs_element) || (frm.doc.custom_wbs_allocations || []).length) return;
+	frm.wbs_filled = true;
+
+	frappe.call({
+		method: "detox_project.detox_project.overrides.revenue_wbs.get_wbs_for_new_form",
+		args: { doc: frm.doc },
+	}).then((r) => {
+		const data = r.message;
+		if (!data || !data.table.length) return;
+
+		data.items.forEach((d) => {
+			const item = locals[frm.doctype + " Item"][d.name];
+			if (!item) return;
+			item.custom_wbs_element = d.wbs;
+			item.custom_sub_wbs_element = d.sub_wbs || "";
+		});
+		frm.refresh_field("items");
+
+		frm.clear_table("custom_wbs_allocations");
+		data.table.forEach((d) => {
+			const row = frm.add_child("custom_wbs_allocations", { allocated_amount: d.amount });
+			// set_value, not a plain assign: Category and the WBS figures fetch from the WBS.
+			frappe.model.set_value(row.doctype, row.name, "wbs_element", d.wbs).then(() => {
+				if (d.sub_wbs) frappe.model.set_value(row.doctype, row.name, "sub_wbs_element", d.sub_wbs);
+			});
+		});
+		frm.refresh_field("custom_wbs_allocations");
+		// The item amounts may still be computing when the form opens.
+		wbs_sync_amounts_delayed(frm);
+	});
+}
+
 // The purchase forms call wbs_apply_handoff from their own scripts.
 WBS_SALES_DOCTYPES.concat("Delivery Note").forEach((doctype) => {
 	frappe.ui.form.on(doctype, {
 		onload(frm) { wbs_apply_handoff(frm); },
 		// A stuck onload handler from another script stops the ones after it.
-		refresh(frm) { wbs_apply_handoff(frm); },
+		refresh(frm) {
+			wbs_apply_handoff(frm);
+			wbs_fill_new_sales_form(frm);
+		},
 	});
 });
 

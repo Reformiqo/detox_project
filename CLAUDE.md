@@ -31,6 +31,7 @@ Managed via `setup.py` → `create_custom_fields()`:
 
 - `custom_wbs_allocations` can be edited by hand and is not copied when a document is mapped (`no_copy`). It must hold one row per WBS + Sub WBS on the items, amount = Σ base_net_amount in company currency (MR: amount). An empty table is filled from the items on save; a filled one is validated, not overwritten. Update Items on a submitted PO rebuilds it.
 - Blank item WBS is copied from the source row (MR item → PO item → PR item → PI item); a row whose WBS differs from its source row is blocked.
+- Sales (overrides/revenue_wbs.py): same rules on Blanket Order → Sales Order → Sales Invoice. A blank item WBS whose source row has none takes it from the source document's WBS table when that has a single row (Sales Invoice also looks at the Sales Order row's Blanket Order). WBS is mandatory on Selling Blanket Order, Sales Order, Delivery Note and Sales Invoice: an empty WBS Allocations table blocks save.
 - Blocked: some rows with a WBS and some without, Sub WBS of another WBS, WBS of another project, ₹0 WBS amount, a header row with no matching item, an item WBS with no header row, a header amount that differs from its items.
 
 ## Budget validation flow

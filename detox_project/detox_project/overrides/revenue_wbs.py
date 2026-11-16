@@ -6,14 +6,18 @@ Ported from the SEPPL Server Scripts "<Doctype> - Revenue WBS Allocation Validat
 
 Blanket Order / Sales Order / Sales Invoice follow the purchase rules
 (overrides/purchase_wbs.py): item rows hold the WBS and the table must match them.
-A document with no item WBS raised from an older document keeps the old
-table-only flow. Delivery Note items stay blank: their WBS is a stock dimension.
+A blank item WBS is copied from its source row, or else from the source
+document's table when that has a single WBS row. A document with no item WBS
+raised from an older document with several WBS rows keeps the old table-only
+flow. Delivery Note items stay blank: their WBS is a stock dimension.
 """
 
 import frappe
 from frappe.utils import flt, fmt_money
 
+from detox_project.detox_project.overrides import purchase_wbs
 from detox_project.detox_project.overrides.purchase_wbs import (
+	copy_wbs_from_source_rows,
 	get_item_wbs_totals,
 	rebuild_wbs_allocations,
 	validate_item_wbs,
@@ -161,6 +165,64 @@ def _validate_rows(doc, allocs, project):
 		if key in seen:
 			frappe.throw(label + "duplicate allocation for the same WBS / Sub WBS / Category.")
 		seen.append(key)
+
+
+def before_validate(doc, method=None):
+	"""Blanket Order / Sales Order / Sales Invoice: fill the item WBS, then the table from the items."""
+	copy_wbs_from_source_rows(doc)
+	_copy_wbs_from_source_table(doc)
+	purchase_wbs.before_validate(doc)
+
+
+def _copy_wbs_from_source_table(doc):
+	"""An item whose source row has no WBS takes it from the source document's
+	table, when that table has a single WBS row (older documents kept the WBS
+	only in the table)."""
+	for item in doc.items:
+		if item.custom_wbs_element:
+			continue
+		source_doctype, source_name = _source_of(doc, item)
+		if not source_name:
+			continue
+		rows = _wbs_table_rows(source_doctype, source_name)
+		# Older Sales Orders from a Blanket Order may have no table: use the Blanket Order's.
+		if not rows and source_doctype == "Sales Order" and item.get("so_detail"):
+			blanket_order = frappe.db.get_value("Sales Order Item", item.so_detail, "blanket_order")
+			if blanket_order:
+				rows = _wbs_table_rows("Blanket Order", blanket_order)
+		# With several rows we can't tell which WBS this item belongs to.
+		if len(rows) == 1 and rows[0].wbs_element:
+			item.custom_wbs_element = rows[0].wbs_element
+			item.custom_sub_wbs_element = rows[0].sub_wbs_element
+
+
+@frappe.whitelist()
+def get_wbs_for_new_form(doc):
+	"""A new Sales Order / Sales Invoice form made from another document: the item
+	WBS and the WBS table it gets on save, so the form shows them straight away."""
+	doc = frappe.get_doc(frappe.parse_json(doc))
+	frappe.has_permission(doc.doctype, "create", throw=True)
+	copy_wbs_from_source_rows(doc)
+	_copy_wbs_from_source_table(doc)
+	rebuild_wbs_allocations(doc)
+	return {
+		"items": [
+			{"name": i.name, "wbs": i.custom_wbs_element, "sub_wbs": i.custom_sub_wbs_element}
+			for i in doc.items
+		],
+		"table": [
+			{"wbs": r.wbs_element, "sub_wbs": r.sub_wbs_element, "amount": r.allocated_amount}
+			for r in doc.get(TABLE)
+		],
+	}
+
+
+def _wbs_table_rows(doctype, name):
+	return frappe.get_all(
+		"Revenue WBS Allocation",
+		filters={"parenttype": doctype, "parent": name},
+		fields=["wbs_element", "sub_wbs_element"],
+	)
 
 
 def _uses_item_wbs(doc):

@@ -122,7 +122,7 @@ doc_events = {
 	# Revenue WBS Allocation (overrides/revenue_wbs.py). Runs after
 	# detox_waste_management's hooks, so Blanket Order custom_net_total is set.
 	"Sales Order": {
-		"before_validate": "detox_project.detox_project.overrides.purchase_wbs.before_validate",
+		"before_validate": "detox_project.detox_project.overrides.revenue_wbs.before_validate",
 		"validate": "detox_project.detox_project.overrides.revenue_wbs.validate_allocations",
 		"before_submit": "detox_project.detox_project.overrides.revenue_wbs.warn_revenue_target",
 		"on_submit": "detox_project.detox_project.overrides.revenue_wbs.rollup",
@@ -131,7 +131,7 @@ doc_events = {
 		"on_update_after_submit": "detox_project.detox_project.overrides.revenue_wbs.resync_after_update_items",
 	},
 	"Blanket Order": {
-		"before_validate": "detox_project.detox_project.overrides.purchase_wbs.before_validate",
+		"before_validate": "detox_project.detox_project.overrides.revenue_wbs.before_validate",
 		"validate": "detox_project.detox_project.overrides.revenue_wbs.validate_allocations",
 	},
 	"WBS Element": {
@@ -160,7 +160,7 @@ doc_events = {
 		"on_submit": "detox_project.detox_project.doctype.cylinder_deposit_ledger.cylinder_deposit_ledger.auto_create_deposit_entries",
 	},
 	"Sales Invoice": {
-		"before_validate": "detox_project.detox_project.overrides.purchase_wbs.before_validate",
+		"before_validate": "detox_project.detox_project.overrides.revenue_wbs.before_validate",
 		"validate": "detox_project.detox_project.overrides.revenue_wbs.validate_allocations",
 		"before_submit": "detox_project.detox_project.overrides.revenue_wbs.warn_revenue_target",
 		"on_submit": [
