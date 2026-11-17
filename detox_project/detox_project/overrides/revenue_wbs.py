@@ -79,9 +79,8 @@ def _copy_from_sources(doc):
 			continue
 		total_field = "custom_net_total" if sdt == "Blanket Order" else "net_total"
 		src_base = flt(frappe.db.get_value(sdt, sname, total_field))
-		if not src_base:
-			continue
-		ratio = amount / src_base
+		# Source total 0: copy the rows as they are; _sync_amounts fixes the amounts.
+		ratio = amount / src_base if src_base else 1
 		for r in rows:
 			key = (r.wbs_element or "", r.sub_wbs_element or "", r.category or "")
 			if key not in merged:
@@ -215,20 +214,27 @@ def _copy_wbs_from_source_table(doc):
 
 @frappe.whitelist()
 def get_wbs_for_new_form(doc):
-	"""A new Sales Order / Sales Invoice form made from another document: the item
-	WBS and the WBS table it gets on save, so the form shows them straight away."""
+	"""A new Sales Order / Sales Invoice / Delivery Note form made from another document:
+	the item WBS and the WBS table it gets on save, so the form shows them straight away."""
 	doc = frappe.get_doc(frappe.parse_json(doc))
 	frappe.has_permission(doc.doctype, "create", throw=True)
 	copy_wbs_from_source_rows(doc)
 	_copy_wbs_from_source_table(doc)
-	rebuild_wbs_allocations(doc)
+	if doc.doctype == "Delivery Note":
+		# Same as validate_allocations does on save for a Delivery Note.
+		doc.set(TABLE, [])
+		_copy_from_sources(doc)
+		if doc.get(TABLE):
+			_sync_amounts(doc.get(TABLE), _base_amount(doc))
+	else:
+		rebuild_wbs_allocations(doc)
 	return {
 		"items": [
 			{"name": i.name, "wbs": i.custom_wbs_element, "sub_wbs": i.custom_sub_wbs_element}
 			for i in doc.items
 		],
 		"table": [
-			{"wbs": r.wbs_element, "sub_wbs": r.sub_wbs_element, "amount": r.allocated_amount}
+			{"wbs": r.wbs_element, "sub_wbs": r.sub_wbs_element, "category": r.category, "amount": r.allocated_amount}
 			for r in doc.get(TABLE)
 		],
 	}
