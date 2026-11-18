@@ -263,6 +263,9 @@ def _check_has_allocation(doc):
 		return
 	if doc.doctype == "Blanket Order" and doc.get("blanket_order_type") != "Selling":
 		return
+	# WBS is optional on a Proformo Sales Order; when entered, it is checked as usual.
+	if doc.doctype == "Sales Order" and doc.get("custom_order__type_") == "Proformo":
+		return
 	if doc.doctype in ITEM_WBS_DOCTYPES:
 		message = f"WBS Element is mandatory on {doc.doctype}. Please set the WBS Element on the item rows."
 	else:
