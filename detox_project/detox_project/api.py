@@ -249,20 +249,29 @@ def recalculate_all_wbs_budgets(wbs_element=None):
 
 @frappe.whitelist()
 def refresh_sub_wbs_spent(sub_wbs):
-	""""Refresh Spent" button on Sub WBS Element: Budget Spent = allocations on submitted Purchase Orders."""
+	""""Refresh Spent" button on Sub WBS Element.
+
+	Budget Spent = Assigned from get_budget_stats (Actual + Commitment + Rem. Ord. Plan,
+	in company currency) - the same figure the form header and the hierarchy tracker show.
+	Summing WBS Allocation rows instead gave a different number (transaction currency on
+	import POs, no direct invoices, closed POs still counted).
+	"""
 	frappe.has_permission("Sub WBS Element", "read", sub_wbs, throw=True)
-	rows = frappe.get_all(
+	doc = frappe.get_doc("Sub WBS Element", sub_wbs)
+	doc.refresh_spent_amounts()
+	if doc.main_wbs_element:
+		frappe.get_doc("WBS Element", doc.main_wbs_element).refresh_spent_amounts()
+
+	po_count = frappe.db.count(
 		"WBS Allocation",
-		filters={"sub_wbs_element": sub_wbs, "parenttype": "Purchase Order", "docstatus": 1},
-		fields=["allocated_amount"],
+		{"sub_wbs_element": sub_wbs, "parenttype": "Purchase Order", "docstatus": 1},
 	)
-	spent = sum(flt(r.allocated_amount) for r in rows)
-	budget = flt(frappe.db.get_value("Sub WBS Element", sub_wbs, "budget_amount"))
-	utilization = (spent / budget * 100) if budget else 0
-
-	frappe.db.set_value("Sub WBS Element", sub_wbs, {"budget_spent": spent, "budget_utilization_pct": utilization})
-
-	return {"spent": spent, "budget": budget, "utilization": utilization, "po_count": len(rows)}
+	return {
+		"spent": flt(doc.budget_spent),
+		"budget": flt(doc.budget_amount),
+		"utilization": flt(doc.budget_utilization_pct),
+		"po_count": po_count,
+	}
 
 
 @frappe.whitelist()
