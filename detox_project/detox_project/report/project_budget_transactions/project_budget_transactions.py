@@ -113,16 +113,25 @@ def main(filters):
 			return str(flt(x * 100, 2)) + "%"
 
 		# ------------------------------------------------------------------
-		# EXPENSE — linked to WBS (WBS Allocation child table)
+		# EXPENSE — linked to WBS. Read from the item rows (company currency:
+		# base_net_amount, MR: amount), the same source as the Sub WBS / WBS
+		# form and Budget Spent. The WBS Allocation header is only a summary
+		# and is stale on documents saved before it was kept in sync.
 		# ------------------------------------------------------------------
 		po_lines = frappe.db.sql(
 			"""
-			select wa.wbs_element, ifnull(wa.sub_wbs_element, '') as sub_wbs_element, wa.allocated_amount,
+			select wa.wbs_element, wa.sub_wbs_element, wa.allocated_amount,
 				po.name, po.transaction_date as dt, po.supplier as party, po.status, po.total as doc_value,
 				ifnull((select sum(poi.billed_amt) from `tabPurchase Order Item` poi where poi.parent = po.name), 0) as billed
-			from `tabWBS Allocation` wa
+			from (
+				select parent, custom_wbs_element as wbs_element,
+					ifnull(custom_sub_wbs_element, '') as sub_wbs_element, sum(base_net_amount) as allocated_amount
+				from `tabPurchase Order Item`
+				where parenttype = 'Purchase Order' and docstatus = 1 and custom_wbs_element in %(w)s
+				group by parent, custom_wbs_element, ifnull(custom_sub_wbs_element, '')
+			) wa
 			inner join `tabPurchase Order` po on po.name = wa.parent
-			where wa.parenttype = 'Purchase Order' and po.docstatus = 1 and wa.wbs_element in %(w)s
+			where po.docstatus = 1
 			""",
 			{"w": wbs_ids},
 			as_dict=True,
@@ -140,11 +149,17 @@ def main(filters):
 
 		pi_lines = frappe.db.sql(
 			"""
-			select wa.wbs_element, ifnull(wa.sub_wbs_element, '') as sub_wbs_element, wa.allocated_amount,
+			select wa.wbs_element, wa.sub_wbs_element, wa.allocated_amount,
 				pi.name, pi.posting_date as dt, pi.supplier as party, pi.status, pi.net_total as doc_value
-			from `tabWBS Allocation` wa
+			from (
+				select parent, custom_wbs_element as wbs_element,
+					ifnull(custom_sub_wbs_element, '') as sub_wbs_element, sum(base_net_amount) as allocated_amount
+				from `tabPurchase Invoice Item`
+				where parenttype = 'Purchase Invoice' and docstatus = 1 and custom_wbs_element in %(w)s
+				group by parent, custom_wbs_element, ifnull(custom_sub_wbs_element, '')
+			) wa
 			inner join `tabPurchase Invoice` pi on pi.name = wa.parent
-			where wa.parenttype = 'Purchase Invoice' and pi.docstatus = 1 and wa.wbs_element in %(w)s
+			where pi.docstatus = 1
 				and not exists (
 					select 1 from `tabPurchase Invoice Item` pii
 					where pii.parent = pi.name and ifnull(pii.purchase_order, '') != ''
@@ -160,7 +175,7 @@ def main(filters):
 
 		mr_lines = frappe.db.sql(
 			"""
-			select wa.wbs_element, ifnull(wa.sub_wbs_element, '') as sub_wbs_element, wa.allocated_amount,
+			select wa.wbs_element, wa.sub_wbs_element, wa.allocated_amount,
 				mr.name, mr.transaction_date as dt, '' as party, mr.status,
 				ifnull((select sum(mri.amount) from `tabMaterial Request Item` mri where mri.parent = mr.name), 0) as doc_value,
 				ifnull((
@@ -171,10 +186,15 @@ def main(filters):
 					from `tabMaterial Request Item` mri
 					where mri.parent = mr.name and mri.stock_qty > 0
 				), 0) as ordered
-			from `tabWBS Allocation` wa
+			from (
+				select parent, custom_wbs_element as wbs_element,
+					ifnull(custom_sub_wbs_element, '') as sub_wbs_element, sum(amount) as allocated_amount
+				from `tabMaterial Request Item`
+				where parenttype = 'Material Request' and docstatus = 1 and custom_wbs_element in %(w)s
+				group by parent, custom_wbs_element, ifnull(custom_sub_wbs_element, '')
+			) wa
 			inner join `tabMaterial Request` mr on mr.name = wa.parent
-			where wa.parenttype = 'Material Request' and mr.docstatus = 1
-				and mr.status in %(st)s and wa.wbs_element in %(w)s
+			where mr.docstatus = 1 and mr.status in %(st)s
 			""",
 			{"w": wbs_ids, "st": OPEN_MR},
 			as_dict=True,
@@ -266,12 +286,18 @@ def main(filters):
 			if header_has_project:
 				header_cond = " or d.project = %(p)s"
 				item_cond = "(i.project = %(p)s or (ifnull(i.project, '') = '' and ifnull(d.project, '') in ('', %(p)s)))"
+			if alloc_table == "WBS Allocation":
+				# Purchase side: the WBS part is read from the item rows, like the linked lines above.
+				linked_sql = ("ifnull((select sum(i3." + amount_field + ") from `tab" + item_doctype + "` i3 "
+					"where i3.parent = d.name and i3.custom_wbs_element in %(w)s), 0)")
+			else:
+				linked_sql = ("ifnull((select sum(a.allocated_amount) from `tab" + alloc_table + "` a where a.parent = d.name "
+					"and a.parenttype = '" + doctype + "' and a.wbs_element in %(w)s), 0)")
 			sql = (
 				"select d.name, " + extra_select + ", "
 				+ "ifnull((select sum(i." + amount_field + ") from `tab" + item_doctype + "` i where i.parent = d.name and "
 				+ item_cond + "), 0) as doc_value, "
-				+ "ifnull((select sum(a.allocated_amount) from `tab" + alloc_table + "` a where a.parent = d.name and a.parenttype = '"
-				+ doctype + "' and a.wbs_element in %(w)s), 0) as linked "
+				+ linked_sql + " as linked "
 				+ "from `tab" + doctype + "` d where d.docstatus = 1 " + where_extra
 				+ " and (exists (select 1 from `tab" + item_doctype + "` i2 where i2.parent = d.name and i2.project = %(p)s)"
 				+ header_cond + ")"
@@ -289,7 +315,7 @@ def main(filters):
 					out.append(r)
 			return out
 
-		for r in unlinked("Purchase Order", "Purchase Order Item", "WBS Allocation", "net_amount", True,
+		for r in unlinked("Purchase Order", "Purchase Order Item", "WBS Allocation", "base_net_amount", True,
 				"d.transaction_date as dt, d.supplier as party, d.status, d.total as po_total, "
 				"ifnull((select sum(x.billed_amt) from `tabPurchase Order Item` x where x.parent = d.name), 0) as billed",
 				"", {}):
@@ -299,7 +325,7 @@ def main(filters):
 				add("Expense", "", "", "commitment", r, r.gap, 1 - billed_fraction,
 					"Not linked x unbilled " + pct(1 - billed_fraction))
 
-		for r in unlinked("Purchase Invoice", "Purchase Invoice Item", "WBS Allocation", "net_amount", True,
+		for r in unlinked("Purchase Invoice", "Purchase Invoice Item", "WBS Allocation", "base_net_amount", True,
 				"d.posting_date as dt, d.supplier as party, d.status",
 				"and not exists (select 1 from `tabPurchase Invoice Item` x where x.parent = d.name and ifnull(x.purchase_order, '') != '')",
 				{}):
@@ -315,11 +341,11 @@ def main(filters):
 			open_fraction = clamp((flt(r.mr_total) - flt(r.ordered)) / flt(r.mr_total)) if flt(r.mr_total) > 0 else 0
 			add("Expense", "", "", "pending", r, r.gap, open_fraction, "Not linked x not yet ordered " + pct(open_fraction))
 
-		for r in unlinked("Sales Invoice", "Sales Invoice Item", "Revenue WBS Allocation", "net_amount", True,
+		for r in unlinked("Sales Invoice", "Sales Invoice Item", "Revenue WBS Allocation", "base_net_amount", True,
 				"d.posting_date as dt, d.customer as party, d.status", "", {}):
 			add("Revenue", "", "", "actual", r, r.gap, 1, "Invoiced, not linked to WBS")
 
-		for r in unlinked("Sales Order", "Sales Order Item", "Revenue WBS Allocation", "net_amount", True,
+		for r in unlinked("Sales Order", "Sales Order Item", "Revenue WBS Allocation", "base_net_amount", True,
 				"d.transaction_date as dt, d.customer as party, d.status, d.total as so_total, "
 				"ifnull((select sum(x.billed_amt) from `tabSales Order Item` x where x.parent = d.name), 0) as billed",
 				"and d.status not in %(cl)s", {"cl": CLOSED_SO}):

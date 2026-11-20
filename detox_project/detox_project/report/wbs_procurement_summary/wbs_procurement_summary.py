@@ -75,7 +75,7 @@ def get_data(filters):
 			)
 
 		for po in frappe.db.sql("""
-			SELECT DISTINCT po.name, po.supplier, po.transaction_date as date, po.grand_total, po.status
+			SELECT DISTINCT po.name, po.supplier, po.transaction_date as date, po.base_grand_total as grand_total, po.status
 			FROM `tabPurchase Order` po
 			JOIN `tabWBS Allocation` wa ON wa.parent = po.name AND wa.parenttype = 'Purchase Order'
 			WHERE wa.wbs_element = %s AND po.docstatus = 1
@@ -95,7 +95,7 @@ def get_data(filters):
 			)
 
 		for pi in frappe.db.sql("""
-			SELECT DISTINCT pi.name, pi.supplier, pi.posting_date as date, pi.grand_total, pi.status
+			SELECT DISTINCT pi.name, pi.supplier, pi.posting_date as date, pi.base_grand_total as grand_total, pi.status
 			FROM `tabPurchase Invoice` pi
 			JOIN `tabWBS Allocation` wa ON wa.parent = pi.name AND wa.parenttype = 'Purchase Invoice'
 			WHERE wa.wbs_element = %s AND pi.docstatus = 1
