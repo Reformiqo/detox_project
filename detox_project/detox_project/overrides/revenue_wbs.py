@@ -26,6 +26,8 @@ from detox_project.detox_project.overrides.purchase_wbs import (
 
 TABLE = "custom_wbs_allocations"
 ITEM_WBS_DOCTYPES = ("Blanket Order", "Sales Order", "Sales Invoice")
+# Sales Order "Order Type" (custom_order__type_) values on which WBS is not mandatory.
+WBS_OPTIONAL_SO_TYPES = ("Proformo Order", "WDP Order")
 
 
 def _base_amount(doc):
@@ -263,8 +265,9 @@ def _check_has_allocation(doc):
 		return
 	if doc.doctype == "Blanket Order" and doc.get("blanket_order_type") != "Selling":
 		return
-	# WBS is optional on a Proformo Order Sales Order; when entered, it is checked as usual.
-	if doc.doctype == "Sales Order" and doc.get("custom_order__type_") == "Proformo Order":
+	# WBS is optional on Proformo Order and WDP Order Sales Orders (used for Proforma
+	# Invoices); when entered, it is still checked as usual.
+	if doc.doctype == "Sales Order" and doc.get("custom_order__type_") in WBS_OPTIONAL_SO_TYPES:
 		return
 	if doc.doctype in ITEM_WBS_DOCTYPES:
 		message = f"WBS Element is mandatory on {doc.doctype}. Please set the WBS Element on the item rows."
