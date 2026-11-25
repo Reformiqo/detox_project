@@ -94,9 +94,7 @@ class WBSElement(Document):
 				FROM `tabFM Expense Item`
 				WHERE parent = %s AND parenttype = 'Financial Model' AND custom_category = %s
 			"""
-		fm_allocation = flt(
-			frappe.db.sql(allocation_sql, (self.financial_model, self.category))[0][0]
-		)
+		fm_allocation = flt(frappe.db.sql(allocation_sql, (self.financial_model, self.category))[0][0])
 		if not fm_allocation:
 			return
 
@@ -114,9 +112,7 @@ class WBSElement(Document):
 		total = existing + flt(self.budget_amount)
 		if flt(total, 2) > flt(fm_allocation, 2):
 			frappe.throw(
-				_(
-					"Total {0} WBS budget for Category [{1}] is {2}. Exceeds FM {0} allocation of {3}."
-				).format(
+				_("Total {0} WBS budget for Category [{1}] is {2}. Exceeds FM {0} allocation of {3}.").format(
 					self.budget_type,
 					self.category,
 					frappe.format_value(total, {"fieldtype": "Currency"}),
