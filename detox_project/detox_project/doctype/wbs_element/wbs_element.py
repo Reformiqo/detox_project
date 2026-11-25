@@ -77,36 +77,43 @@ class WBSElement(Document):
 	def validate_category_budget(self):
 		if not self.financial_model or not self.category or not self.budget_amount:
 			return
-		fm_allocation = (
-			frappe.db.sql(
-				"""
+		if self.budget_type not in ("CAPEX", "OPEX"):
+			return
+
+		# The same category can sit on both FM tabs, so CAPEX and OPEX are checked
+		# separately: CAPEX WBS vs the CAPEX tab, OPEX WBS vs the OPEX tab.
+		if self.budget_type == "CAPEX":
+			allocation_sql = """
 				SELECT COALESCE(SUM(amount), 0)
 				FROM `tabFM Project Cost Item`
-				WHERE parent = %s AND category = %s
-				""",
-				(self.financial_model, self.category),
-			)[0][0]
-			or 0
-		)
+				WHERE parent = %s AND parenttype = 'Financial Model' AND category = %s
+			"""
+		else:
+			allocation_sql = """
+				SELECT COALESCE(SUM(annual_base_amount), 0)
+				FROM `tabFM Expense Item`
+				WHERE parent = %s AND parenttype = 'Financial Model' AND custom_category = %s
+			"""
+		fm_allocation = flt(frappe.db.sql(allocation_sql, (self.financial_model, self.category))[0][0])
 		if not fm_allocation:
 			return
-		existing = (
+
+		existing = flt(
 			frappe.db.sql(
 				"""
 				SELECT COALESCE(SUM(budget_amount), 0)
 				FROM `tabWBS Element`
-				WHERE financial_model = %s AND category = %s AND name != %s AND status != 'Cancelled'
+				WHERE financial_model = %s AND category = %s AND budget_type = %s
+				  AND name != %s AND status != 'Cancelled'
 				""",
-				(self.financial_model, self.category, self.name or ""),
+				(self.financial_model, self.category, self.budget_type, self.name or ""),
 			)[0][0]
-			or 0
 		)
-		total = existing + (self.budget_amount or 0)
-		if total > fm_allocation:
+		total = existing + flt(self.budget_amount)
+		if flt(total, 2) > flt(fm_allocation, 2):
 			frappe.throw(
-				_(
-					"Total WBS budget for Category [{0}] is {1}. Exceeds FM allocation of {2}."
-				).format(
+				_("Total {0} WBS budget for Category [{1}] is {2}. Exceeds FM {0} allocation of {3}.").format(
+					self.budget_type,
 					self.category,
 					frappe.format_value(total, {"fieldtype": "Currency"}),
 					frappe.format_value(fm_allocation, {"fieldtype": "Currency"}),
